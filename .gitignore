@@ -24,3 +24,7 @@ service-account*.json
 *.log
 .vercel/
 tsconfig.tsbuildinfo
+
+# generated agent instruction files (not application source)
+AGENTS.md
+CLAUDE.md
