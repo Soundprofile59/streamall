@@ -108,13 +108,11 @@ export class PlayerOrchestrator {
   async play() {
     if (!this.#adapter) return;
     await this.#adapter.play();
-    this.#emit({ state: "PLAYING" });
   }
 
   async pause() {
     if (!this.#adapter) return;
     await this.#adapter.pause();
-    this.#emit({ state: "PAUSED" });
   }
 
   async seek(seconds: number) {

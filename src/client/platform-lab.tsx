@@ -50,7 +50,7 @@ export function PlatformLab() {
         <div className="panel lab-player"><h2>Playback</h2>
           {selected?.provider === "youtube" ? <iframe title="YouTube Platform Lab" src={`https://www.youtube.com/embed/${encodeURIComponent(selected.externalId)}?enablejsapi=1&playsinline=1`} allow="autoplay" /> : null}
           {selected?.provider === "mixcloud" ? <iframe title="Mixcloud Platform Lab" src={`https://player-widget.mixcloud.com/widget/iframe/?light=1&feed=${encodeURIComponent(selected.externalId)}`} allow="autoplay" /> : null}
-          <audio ref={audioRef} controls onCanPlay={() => setStatus("READY")} onPlay={() => setStatus("PLAYING")} onPause={() => setStatus("PAUSED")} onEnded={() => setStatus("ENDED")} onError={() => setStatus("ERROR")} onTimeUpdate={(event) => { setPosition(event.currentTarget.currentTime); setDuration(event.currentTarget.duration || 0); }} />
+          <audio ref={audioRef} controls onCanPlay={(event) => setStatus(event.currentTarget.paused ? "READY" : "PLAYING")} onPlay={() => setStatus("PLAYING")} onPause={() => setStatus("PAUSED")} onEnded={() => setStatus("ENDED")} onError={() => setStatus("ERROR")} onTimeUpdate={(event) => { setPosition(event.currentTarget.currentTime); setDuration(event.currentTarget.duration || 0); }} />
           <dl><dt>Selected</dt><dd>{selected?.title ?? "—"}</dd><dt>Position</dt><dd>{position.toFixed(1)} s</dd><dt>Duration</dt><dd>{duration.toFixed(1)} s</dd><dt>Mobile</dt><dd>MANUAL TEST REQUIRED</dd></dl>
         </div>
       </section>

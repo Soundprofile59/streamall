@@ -133,6 +133,7 @@ export class YouTubeAdapter implements PlaybackAdapter {
     this.#player?.destroy();
     this.container.replaceChildren();
     await new Promise<void>((resolve, reject) => {
+      let loaded = false;
       this.#player = new YT.Player(this.container, {
         width: "100%",
         height: "100%",
@@ -140,6 +141,7 @@ export class YouTubeAdapter implements PlaybackAdapter {
         playerVars: { controls: 1, playsinline: 1, origin: window.location.origin },
         events: {
           onReady: ({ target }) => {
+            loaded = true;
             this.#player = target;
             onEvent({ type: "ready" });
             resolve();
@@ -149,7 +151,11 @@ export class YouTubeAdapter implements PlaybackAdapter {
             if (data === YT.PlayerState.PAUSED) onEvent({ type: "paused" });
             if (data === YT.PlayerState.ENDED) onEvent({ type: "ended" });
           },
-          onError: ({ data }) => reject(new Error(`YouTube player error ${data}`)),
+          onError: ({ data }) => {
+            const error = new Error(`YouTube player error ${data}`);
+            if (!loaded) reject(error);
+            else onEvent({ type: "error", error });
+          },
         },
       });
     });

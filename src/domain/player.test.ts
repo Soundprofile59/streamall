@@ -58,4 +58,19 @@ describe("PlayerOrchestrator race safety", () => {
     expect(orchestrator.snapshot.source?.id).toBe("source_2");
     expect(orchestrator.snapshot.state).toBe("PLAYING");
   });
+
+  it("does not report playback without a provider playing event", async () => {
+    const silent = new FakeAdapter();
+    silent.play = async () => undefined;
+    const orchestrator = new PlayerOrchestrator({
+      adapterFor: () => silent,
+      context,
+      onEnded: vi.fn(),
+      onSourceFailure: vi.fn(),
+    });
+
+    await orchestrator.load(libraryFixture(1).tracks[0]!, [sourceFixture("source_1")]);
+
+    expect(orchestrator.snapshot.state).toBe("READY");
+  });
 });
