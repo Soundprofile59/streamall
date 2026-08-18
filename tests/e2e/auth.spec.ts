@@ -25,6 +25,9 @@ test("owner can sign in and open the private library", async ({ page }) => {
   await page.getByRole("button", { name: "Entrer" }).click();
   await expect(page.getByText("STREAMALL")).toBeVisible();
   await expect(page.getByRole("button", { name: /RANDOM/ })).toBeVisible();
+  await page.getByRole("button", { name: /Track 0/ }).click();
+  await expect(page.getByRole("heading", { name: "Track 0", level: 1 })).toBeVisible();
+  await page.getByRole("button", { name: "Fermer" }).click();
   await page.getByRole("button", { name: /RANDOM/ }).click();
   await expect(page.getByRole("heading", { name: "Track 0", level: 1 })).toBeVisible();
 });

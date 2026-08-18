@@ -423,7 +423,7 @@ export function StreamallApp() {
               <div className="library-list">
                 {visibleItems.map((item) => {
                   const label = itemLabel(item, library);
-                  return <button key={item.id} className={`library-row ${selectedId === item.id ? "selected" : ""}`} onClick={() => setSelectedId(item.id)} onDoubleClick={() => void playItem(item.id)}>
+                  return <button key={item.id} className={`library-row ${selectedId === item.id ? "selected" : ""}`} onClick={() => void playItem(item.id)}>
                     <span className="row-play">▶</span><span><strong>{label.title}</strong><small>{label.artist} · {item.kind === "mix" ? "Mix" : formatTime(item.duration)}</small></span><span className="row-tags">{[...item.moods, ...item.genres].slice(0, 2).join(" · ") || "À classer"}</span>
                   </button>;
                 })}

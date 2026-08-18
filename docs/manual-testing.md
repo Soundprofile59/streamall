@@ -10,6 +10,7 @@ Renseigner appareil, OS, navigateur, date, résultat et preuve pour chaque ligne
 - PASS : recherche production, 44 résultats; Audius, YouTube, Jamendo et Mixcloud `LIVE`.
 - PASS : Random génère une queue de 16; Audius play/pause/reprise et fallback; Mixcloud play/pause après geste; YouTube play/pause/reprise.
 - PASS local : Google Sheets, export/restauration/redémarrage; Audius et Jamendo seek/ended; Mixcloud progression.
+- RETEST MAC REQUIS : le premier essai physique a révélé qu’une ligne `▶` ne lançait la lecture qu’au double-clic. Le clic/tap simple appelle désormais directement le lecteur et passe l’E2E Chromium/WebKit.
 - RESTE MANUEL : tous les points Mac ci-dessous qui exigent audition/observation physique, puis iPhone Safari et PWA.
 
 ## Mac desktop
