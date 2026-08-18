@@ -1,5 +1,14 @@
 # Déploiement Vercel
 
+## État validé — 18 août 2026
+
+- Projet : `dystopik-asylum/streamall` (Hobby).
+- Domaine canonique : <https://streamall-three.vercel.app>.
+- Branche de production : `agent/streamall-v1`; PR #1 conservée en Draft.
+- Runtime : preset Next.js, Node.js 22.x.
+- Repository : Google Sheets réel; secrets Production et Preview configurés; `ENABLE_PLATFORM_LAB=false`.
+- Déploiement du commit `e42c280` : `Ready` après redéploiement avec les paramètres Next.js.
+
 ## Préconditions
 
 1. Créer une Google Sheet dédiée et un service account; partager la feuille avec son email.
@@ -23,6 +32,8 @@ Random → play → ended → next
 export → fichier JSON
 /dev/platform-lab en production → 404
 ```
+
+Résultats du 18 août 2026 : redirection `/` 307 vers `/login`, `/api/library` 401 sans cookie, bibliothèque Sheets chargée après connexion, quatre providers `LIVE`, Random/Next et playback Audius/Mixcloud/YouTube opérationnels, Platform Lab 404 authentifié. Le téléchargement export et la restauration restent à rejouer dans le navigateur Mac physique avant `READY`.
 
 ## Rollback
 

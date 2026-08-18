@@ -2,6 +2,16 @@
 
 Renseigner appareil, OS, navigateur, date, résultat et preuve pour chaque ligne.
 
+## Prévalidation technique — 18 août 2026
+
+- PASS : accès sans cookie `/` → `/login`; `/api/library` → 401.
+- PASS : connexion production et chargement de la bibliothèque Google Sheets réelle (2 Tracks, 1 Mix, état `Synchronisé`).
+- PASS : `/dev/platform-lab` retourne 404 après authentification avec `ENABLE_PLATFORM_LAB=false`.
+- PASS : recherche production, 44 résultats; Audius, YouTube, Jamendo et Mixcloud `LIVE`.
+- PASS : Random génère une queue de 16; Audius play/pause/reprise et fallback; Mixcloud play/pause après geste; YouTube play/pause/reprise.
+- PASS local : Google Sheets, export/restauration/redémarrage; Audius et Jamendo seek/ended; Mixcloud progression.
+- RESTE MANUEL : tous les points Mac ci-dessous qui exigent audition/observation physique, puis iPhone Safari et PWA.
+
 ## Mac desktop
 
 1. Connexion privée; vérifier qu’un visiteur sans cookie ne lit ni page, ni `/api/library`, ni export, ni Platform Lab production.

@@ -1,13 +1,13 @@
 # Matrice providers
 
-Recherche officielle effectuée le 17 août 2026. `DOCS_CONFIRMED` ne signifie jamais `LIVE_TESTED`.
+Recherche officielle effectuée le 17 août 2026; validations live effectuées les 17 et 18 août 2026. `LIVE_TESTED` ne couvre que les opérations explicitement indiquées.
 
 | Provider | Search | Play | Pause | Seek | Ended | Autoplay | Mobile/PWA | Statut V1 |
 |---|---|---|---|---|---|---|---|---|
-| Audius | DOCS_CONFIRMED, IMPLEMENTED, UNTESTED LIVE | DOCS_CONFIRMED, IMPLEMENTED, UNTESTED LIVE | HTML Audio, UNTESTED LIVE | HTML Audio, UNTESTED LIVE | HTML Audio, UNTESTED LIVE | CONTEXT_DEPENDENT | MANUAL TEST REQUIRED | BLOCKED BY `AUDIUS_API_KEY` |
-| YouTube | DOCS_CONFIRMED, IMPLEMENTED, UNTESTED LIVE | IFrame API, IMPLEMENTED, UNTESTED LIVE | IMPLEMENTED | IMPLEMENTED | IMPLEMENTED | CONTEXT_DEPENDENT | MANUAL TEST REQUIRED | BLOCKED BY `YOUTUBE_API_KEY` |
-| Jamendo | DOCS_CONFIRMED, IMPLEMENTED, UNTESTED WITH VALID KEY | direct licensed audio, IMPLEMENTED | HTML Audio | HTML Audio | HTML Audio | CONTEXT_DEPENDENT | MANUAL TEST REQUIRED | BLOCKED BY VALID `JAMENDO_CLIENT_ID` |
-| Mixcloud | DOCS_CONFIRMED, IMPLEMENTED, LIVE_TESTED | visible widget, IMPLEMENTED, LOAD TESTED | IMPLEMENTED | PARTIAL (widget may reject) | IMPLEMENTED | CONTEXT_DEPENDENT | MANUAL AUDIO TEST REQUIRED | CANDIDATE V1 |
+| Audius | LIVE_TESTED | LIVE_TESTED local + production | LIVE_TESTED | LIVE_TESTED | LIVE_TESTED | LIVE_TESTED après geste; contexte dépendant | MANUAL TEST REQUIRED | V1 CANDIDATE |
+| YouTube | LIVE_TESTED | LIVE_TESTED en production HTTPS | LIVE_TESTED en production | MANUAL TEST REQUIRED | MANUAL TEST REQUIRED | CONTEXT_DEPENDENT | MANUAL TEST REQUIRED | V1 CANDIDATE |
+| Jamendo | LIVE_TESTED | LIVE_TESTED dans Platform Lab | LIVE_TESTED | LIVE_TESTED | LIVE_TESTED | LIVE_TESTED après geste; contexte dépendant | MANUAL TEST REQUIRED | V1 CANDIDATE |
+| Mixcloud | LIVE_TESTED | LIVE_TESTED local + production | LIVE_TESTED | PARTIAL/MANUAL TEST REQUIRED | MANUAL TEST REQUIRED | LIVE_TESTED après geste; contexte dépendant | MANUAL TEST REQUIRED | V1 CANDIDATE |
 | SoundCloud | DOCS_CONFIRMED | NOT IMPLEMENTED | NOT IMPLEMENTED | NOT IMPLEMENTED | NOT IMPLEMENTED | NOT TESTED | NOT TESTED | BLOCKED BY APP CREDENTIAL AVAILABILITY |
 | Bandcamp | URL/embed approach documented | NOT IMPLEMENTED | NOT IMPLEMENTED | UNSUPPORTED/UNKNOWN | NOT TESTED | NOT TESTED | NOT TESTED | SECONDARY/FUTURE |
 
@@ -24,8 +24,8 @@ Recherche officielle effectuée le 17 août 2026. `DOCS_CONFIRMED` ne signifie j
 
 ## Tests manuels indispensables
 
-YouTube autoplay/visibilité/erreurs/Premium-publicités, iPhone Safari, PWA installée, écran verrouillé et background; Mixcloud widget mobile; Audius seek/ended; Jamendo ended et changements de contenu. Aucun résultat n’est inventé avant ces tests.
+YouTube seek/ended, autoplay/visibilité/erreurs/Premium-publicités, iPhone Safari, PWA installée, écran verrouillé et background; Mixcloud seek/ended et widget mobile; les parcours complets Mac physiques de chaque provider. Aucun résultat n’est inventé avant ces tests.
 
-Le client de démonstration public cité dans l’ancienne documentation Jamendo répondait `suspended application` lors du smoke test du 17 août 2026. Streamall détecte maintenant ce statut métier (même lorsque HTTP répond 200) et classe le fournisseur en `ERROR`; une clé de projet valide reste nécessaire.
+Le client de démonstration public cité dans l’ancienne documentation Jamendo répondait `suspended application` lors du smoke test du 17 août 2026. Streamall détecte ce statut métier même lorsque HTTP répond 200. Le client du projet fourni ensuite a validé Search, Range, play, pause, seek et ended.
 
-Le même smoke test a obtenu 10 résultats Mixcloud live, puis validé dans le navigateur l’ajout en bibliothèque, la génération d’une queue de 20 entrées et le chargement du widget visible. L’écoute audio/seek/ended reste une validation humaine.
+Mixcloud a obtenu 10 résultats live; le widget visible a ensuite validé play, pause, reprise et progression locale, puis play/pause sur le domaine Vercel. Audius a validé Search, Range 206, play/pause/seek/ended et un fallback réel. YouTube a validé Search puis play/pause/reprise en production HTTPS. La recherche production du 18 août a renvoyé 44 résultats avec Audius, YouTube, Jamendo et Mixcloud tous `LIVE`.

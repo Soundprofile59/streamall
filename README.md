@@ -4,7 +4,7 @@ Streamall est une discothèque personnelle intelligente, privée et multi-source
 
 ## État
 
-Baseline V1 exécutable. Le cœur domaine, l’accès single-user, la bibliothèque, Google Sheets, la recherche multi-provider, le Player Orchestrator, la Queue, le Random Engine, l’historique, l’édition Genre/Mood/Energy et le backup JSON sont implémentés. La suite locale validée comprend 18 tests de domaine/serveur et 4 scénarios E2E Chromium/WebKit. Les validations provider live avec credentials, iPhone réel et PWA installée restent obligatoires avant un statut `READY`.
+Candidate V1 déployée sur <https://streamall-three.vercel.app> depuis la branche Draft `agent/streamall-v1`. Le cœur domaine, l’accès single-user, Google Sheets réel, l’export/restauration JSON, les quatre providers V1 et le Player Orchestrator ont été validés techniquement le 18 août 2026. La suite locale passe avec 19 tests de domaine/serveur et 4 scénarios E2E Chromium/WebKit. Les checklists physiques Mac, iPhone Safari et PWA installée restent obligatoires avant un statut `READY`.
 
 Voir [les limitations connues](docs/known-limitations.md) et [la matrice de capacités](docs/platform-capabilities.md).
 
