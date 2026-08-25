@@ -39,6 +39,8 @@ export function CatalogBrowser() {
   const [releases, setReleases] = useState<CatalogReleaseGroup[]>([]);
   const [selectedRelease, setSelectedRelease] = useState<CatalogReleaseDetail | null>();
   const [loading, setLoading] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importStatus, setImportStatus] = useState<string>();
   const [error, setError] = useState<string>();
 
   useEffect(() => {
@@ -64,6 +66,7 @@ export function CatalogBrowser() {
     if (value.length < 2) return;
     setLoading(true);
     setError(undefined);
+    setImportStatus(undefined);
     setSelectedArtist(undefined);
     setSelectedRelease(undefined);
     setReleases([]);
@@ -81,6 +84,7 @@ export function CatalogBrowser() {
   async function loadArtist(artist: CatalogArtist) {
     setSelectedArtist(artist);
     setSelectedRelease(undefined);
+    setImportStatus(undefined);
     setLoading(true);
     setError(undefined);
     try {
@@ -96,6 +100,7 @@ export function CatalogBrowser() {
 
   async function loadRelease(release: CatalogReleaseGroup) {
     setLoading(true);
+    setImportStatus(undefined);
     setError(undefined);
     try {
       const body = await catalogRequest(`/api/catalog?releaseGroupId=${encodeURIComponent(release.id)}`);
@@ -105,6 +110,39 @@ export function CatalogBrowser() {
       setSelectedRelease(null);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function importAlbum() {
+    if (!selectedArtist || !selectedRelease || importing) return;
+    setImporting(true);
+    setError(undefined);
+    setImportStatus(undefined);
+    try {
+      const response = await fetch("/api/catalog/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ artist: selectedArtist, release: selectedRelease }),
+      });
+      const body = (await response.json().catch(() => null)) as {
+        addedTracks?: number;
+        existingTracks?: number;
+        albumCreated?: boolean;
+        message?: string;
+        error?: string;
+      } | null;
+      if (!response.ok || !body) throw new Error(body?.message ?? body?.error ?? "Import impossible");
+
+      if ((body.addedTracks ?? 0) === 0 && !body.albumCreated) {
+        setImportStatus(`✓ Album déjà présent · ${body.existingTracks ?? selectedRelease.tracks.length} pistes reconnues`);
+      } else {
+        setImportStatus(`✓ Album ajouté · ${body.addedTracks ?? 0} piste${(body.addedTracks ?? 0) > 1 ? "s" : ""} créée${(body.addedTracks ?? 0) > 1 ? "s" : ""}`);
+        window.setTimeout(() => window.location.reload(), 900);
+      }
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Import impossible");
+    } finally {
+      setImporting(false);
     }
   }
 
@@ -138,11 +176,22 @@ export function CatalogBrowser() {
           <div className="catalog-content">
             {selectedRelease !== undefined ? (
               <div className="catalog-release-detail">
-                <button className="catalog-back" type="button" onClick={() => setSelectedRelease(undefined)}>← Discographie</button>
+                <button className="catalog-back" type="button" onClick={() => { setSelectedRelease(undefined); setImportStatus(undefined); }}>← Discographie</button>
                 {selectedRelease ? <>
                   <div className="catalog-release-hero">
                     <div className="catalog-cover large" style={selectedRelease.artwork ? { backgroundImage: `url("${selectedRelease.artwork}")` } : undefined}>▦</div>
-                    <div><p>{selectedRelease.status ?? "Release"} · {yearOf(selectedRelease.date)}{selectedRelease.country ? ` · ${selectedRelease.country}` : ""}</p><h3>{selectedRelease.title}</h3><span>{selectedRelease.tracks.length} piste{selectedRelease.tracks.length > 1 ? "s" : ""}</span></div>
+                    <div className="catalog-release-copy">
+                      <p>{selectedRelease.status ?? "Release"} · {yearOf(selectedRelease.date)}{selectedRelease.country ? ` · ${selectedRelease.country}` : ""}</p>
+                      <h3>{selectedRelease.title}</h3>
+                      <span>{selectedRelease.tracks.length} piste{selectedRelease.tracks.length > 1 ? "s" : ""}</span>
+                      <div className="catalog-release-actions">
+                        <button className="catalog-import-button" type="button" disabled={importing} onClick={() => void importAlbum()}>
+                          {importing ? "Ajout…" : "+ Ajouter l’album complet"}
+                        </button>
+                        <small>Crée l’album et toutes ses pistes dans Streamall. Les sources de lecture peuvent être résolues ensuite.</small>
+                      </div>
+                      {importStatus ? <div className="catalog-import-status">{importStatus}</div> : null}
+                    </div>
                   </div>
                   <div className="catalog-tracklist">
                     {selectedRelease.tracks.map((track) => <div className="catalog-track" key={`${track.position}:${track.title}`}>
@@ -157,7 +206,7 @@ export function CatalogBrowser() {
             ) : selectedArtist ? (
               <div>
                 <div className="catalog-subhead">
-                  <button className="catalog-back" type="button" onClick={() => { setSelectedArtist(undefined); setReleases([]); }}>← Artistes</button>
+                  <button className="catalog-back" type="button" onClick={() => { setSelectedArtist(undefined); setReleases([]); setImportStatus(undefined); }}>← Artistes</button>
                   <div><p>DISCOGRAPHIE</p><h3>{selectedArtist.name}</h3></div>
                   <span>{releases.length} sortie{releases.length > 1 ? "s" : ""}</span>
                 </div>
@@ -178,14 +227,14 @@ export function CatalogBrowser() {
                     <span><strong>{artist.name}</strong><small>{[artist.type, artist.country, artist.disambiguation].filter(Boolean).join(" · ") || "Artiste MusicBrainz"}</small></span>
                     <span>{artist.score !== undefined ? `${artist.score}%` : "→"}</span>
                   </button>)}
-                  {!loading && !artists.length ? <div className="catalog-empty">La recherche principale reste dédiée aux sources de lecture. Ici, on part de l’artiste puis de sa vraie discographie.</div> : null}
+                  {!loading && !artists.length ? <div className="catalog-empty">Cherchez d’abord l’artiste, puis choisissez l’album ou l’EP à ajouter à votre bibliothèque.</div> : null}
                 </div>
               </div>
             )}
           </div>
 
           <footer className="catalog-footer">
-            <span>Les albums/EP viennent de MusicBrainz. « Sources » renvoie une piste vers la recherche Streamall sans l’ajouter automatiquement.</span>
+            <span>MusicBrainz fournit la structure canonique. « Ajouter l’album complet » crée les pistes même sans source ; « Sources » cherche ensuite une lecture disponible.</span>
           </footer>
         </section>
       </div> : null}
