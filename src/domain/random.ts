@@ -90,16 +90,29 @@ function snapshotReferenceTime(snapshot: LibrarySnapshot) {
   );
 }
 
+export function starRatingWeight(rating?: number) {
+  if (rating === undefined) return 1;
+  return ({ 1: 0.18, 2: 0.5, 3: 1, 4: 1.7, 5: 2.7 } as Record<number, number>)[rating] ?? 1;
+}
+
+function preferenceWeight(item: PlayableItem) {
+  if (item.rating !== undefined) return starRatingWeight(item.rating);
+
+  // Backward compatibility for libraries created before star ratings.
+  let legacy = 1;
+  if (item.favorite) legacy *= 1.4;
+  if (item.frequencyPreference === "MORE") legacy *= 2;
+  if (item.frequencyPreference === "LESS") legacy *= 0.45;
+  return legacy;
+}
+
 function itemWeight(
   item: PlayableItem,
   snapshot: LibrarySnapshot,
   settings: RandomSettings,
   referenceTime: number,
 ) {
-  let weight = 1;
-  if (item.favorite) weight *= 1.4;
-  if (item.frequencyPreference === "MORE") weight *= 2;
-  if (item.frequencyPreference === "LESS") weight *= 0.45;
+  let weight = preferenceWeight(item);
   if (item.kind === "mix") {
     weight *= { NEVER: 0, RARE: 0.18, NORMAL: 0.65, FREQUENT: 1.25 }[settings.mixFrequency];
     if (item.duration && item.duration > 5400) weight *= 0.55;
