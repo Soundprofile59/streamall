@@ -1,13 +1,32 @@
 .album-tile-actions {
   position: absolute;
-  right: 1px;
-  bottom: 0;
+  right: 7px;
+  bottom: 31px;
   display: flex;
   gap: 4px;
   align-items: center;
+  padding: 4px;
+  border: 1px solid rgba(83, 94, 102, .46);
+  border-radius: 999px;
+  background: rgba(8, 11, 13, .86);
+  box-shadow: 0 5px 18px rgba(0, 0, 0, .32);
+  backdrop-filter: blur(8px);
+  opacity: 0;
+  transform: translateY(5px);
+  pointer-events: none;
+  transition: opacity .15s ease, transform .15s ease;
+  z-index: 4;
 }
 
-.album-tile-copy { padding-right: 112px !important; }
+.album-tile:hover .album-tile-actions,
+.album-tile:focus-within .album-tile-actions {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.album-tile-copy { padding-right: 2px !important; }
+.album-hover-info { padding-bottom: 42px; }
 
 .album-favorite-button,
 .album-info-shortcut,
@@ -187,8 +206,16 @@
   text-align: right;
 }
 
+@media (hover: none) {
+  .album-tile-actions {
+    opacity: 1;
+    transform: none;
+    pointer-events: auto;
+  }
+}
+
 @media (max-width: 820px) {
-  .album-tile-copy { padding-right: 82px !important; }
+  .album-tile-copy { padding-right: 2px !important; }
   .album-info-shortcut { display: none; }
   .album-detail-actions { align-items: stretch; }
   .album-detail-actions button { flex: 1 1 auto; }
