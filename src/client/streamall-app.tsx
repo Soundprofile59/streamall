@@ -20,7 +20,7 @@ import { ServiceWorkerRegistration } from "./service-worker-registration";
 
 type Section = "tracks" | "mixes" | "albums" | "artists" | "genres" | "moods";
 type ProviderStatus = { provider: Provider; status: string; message?: string };
-type EditablePatch = Partial<Pick<PlayableItem, "moods" | "genres" | "energy" | "favorite" | "frequencyPreference" | "disabled">>;
+type EditablePatch = Partial<Pick<PlayableItem, "moods" | "genres" | "energy" | "rating" | "favorite" | "frequencyPreference" | "disabled">>;
 
 function playbackContext() {
   return {
@@ -52,6 +52,28 @@ function downloadJson(value: unknown, filename: string) {
 
 function sameExternalResult(a: ExternalSearchResult | undefined, b: ExternalSearchResult) {
   return a?.provider === b.provider && a.externalId === b.externalId;
+}
+
+function effectiveRating(item: PlayableItem) {
+  if (item.rating !== undefined) return item.rating;
+  if (item.favorite) return 5;
+  if (item.frequencyPreference === "MORE") return 4;
+  if (item.frequencyPreference === "LESS") return 2;
+  return undefined;
+}
+
+function ratingMeaning(rating?: number) {
+  return rating === 1
+    ? "Très rarement"
+    : rating === 2
+      ? "Moins souvent"
+      : rating === 3
+        ? "Fréquence normale"
+        : rating === 4
+          ? "Souvent"
+          : rating === 5
+            ? "Très souvent"
+            : "Non noté · fréquence normale";
 }
 
 export function StreamallApp() {
@@ -474,6 +496,7 @@ export function StreamallApp() {
 
   const items = useMemo(() => (library ? allPlayable(library) : []), [library]);
   const selected = items.find((item) => item.id === selectedId);
+  const selectedRating = selected ? effectiveRating(selected) : undefined;
   const selectedSources = selected && library ? library.sources.filter((source) => source.playableItemId === selected.id) : [];
   const currentLabel = previewResult
     ? { title: previewResult.title, artist: previewResult.artistName }
@@ -541,8 +564,10 @@ export function StreamallApp() {
               <div className="library-list">
                 {visibleItems.map((item) => {
                   const label = itemLabel(item, library);
+                  const rating = effectiveRating(item);
+                  const tags = [...item.moods, ...item.genres].slice(0, 2).join(" · ");
                   return <button key={item.id} className={`library-row ${selectedId === item.id ? "selected" : ""}`} onClick={() => void playItem(item.id)}>
-                    <span className="row-play">▶</span><span><strong>{label.title}</strong><small>{label.artist} · {item.kind === "mix" ? "Mix" : formatTime(item.duration)}</small></span><span className="row-tags">{[...item.moods, ...item.genres].slice(0, 2).join(" · ") || "À classer"}</span>
+                    <span className="row-play">▶</span><span><strong>{label.title}</strong><small>{label.artist} · {item.kind === "mix" ? "Mix" : formatTime(item.duration)}</small></span><span className="row-tags">{`${rating ? `${"★".repeat(rating)} · ` : ""}${tags || "À classer"}`}</span>
                   </button>;
                 })}
                 {section === "albums" && library.albums.map((album) => <div key={album.id} className="library-row static"><span className="row-play">▦</span><span><strong>{album.title}</strong><small>{library.tracks.filter((track) => track.albumId === album.id).length} morceau(x)</small></span><button onClick={() => playAlbum(album.id)}>Lire</button></div>)}
@@ -599,7 +624,13 @@ export function StreamallApp() {
         <fieldset><legend>Moods</legend>{library.moods.map((mood) => <label key={mood}><input type="checkbox" checked={selected.moods.includes(mood)} onChange={() => editSelected({ moods: selected.moods.includes(mood) ? selected.moods.filter((entry) => entry !== mood) : [...selected.moods, mood] })} />{mood}</label>)}</fieldset>
         <fieldset><legend>Genres</legend>{library.genres.map((genre) => <label key={genre}><input type="checkbox" checked={selected.genres.includes(genre)} onChange={() => editSelected({ genres: selected.genres.includes(genre) ? selected.genres.filter((entry) => entry !== genre) : [...selected.genres, genre] })} />{genre}</label>)}</fieldset>
         <label>Energy<select value={selected.energy ?? ""} onChange={(event) => editSelected({ energy: event.target.value ? Number(event.target.value) : undefined })}><option value="">Non renseignée</option>{[1, 2, 3, 4, 5].map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
-        <div className="feedback-actions"><button className={selected.favorite ? "active" : ""} onClick={() => editSelected({ favorite: !selected.favorite })}>♥ Favorite</button><button className={selected.frequencyPreference === "MORE" ? "active" : ""} onClick={() => editSelected({ frequencyPreference: "MORE" })}>+ Souvent</button><button className={selected.frequencyPreference === "LESS" ? "active" : ""} onClick={() => editSelected({ frequencyPreference: "LESS" })}>− Souvent</button><button className={selected.disabled ? "danger" : ""} onClick={() => editSelected({ disabled: !selected.disabled })}>{selected.disabled ? "Réactiver" : "Désactiver"}</button></div>
+        <div className="rating-row">
+          <div><strong>Préférence personnelle</strong><small>{ratingMeaning(selectedRating)} · influe sur Random</small></div>
+          <div className="star-rating" role="group" aria-label="Préférence de lecture de 1 à 5 étoiles">
+            {[1, 2, 3, 4, 5].map((value) => <button key={value} type="button" className={value <= (selectedRating ?? 0) ? "filled" : ""} aria-label={`${value} étoile${value > 1 ? "s" : ""}`} aria-pressed={selectedRating === value} title={`${value}/5 · ${ratingMeaning(value)}`} onClick={() => editSelected({ rating: selectedRating === value ? undefined : value, favorite: false, frequencyPreference: "NORMAL" })}>★</button>)}
+          </div>
+        </div>
+        <div className="rating-hard-action"><button className={selected.disabled ? "danger" : ""} onClick={() => editSelected({ disabled: !selected.disabled })}>{selected.disabled ? "Réintégrer au Random" : "Exclure du Random"}</button></div>
         <div className="sources"><strong>Sources</strong>{selectedSources.map((source) => <div key={source.id}><span className={`provider ${source.provider}`}>{source.provider}</span><small>{source.healthStatus} · priorité {source.priority}</small>{selectedSources.length > 1 ? <button onClick={() => mutateLibrary((snapshot) => removeSource(snapshot, source.id))}>Retirer</button> : null}</div>)}{!selectedSources.length ? <p>Aucune Source. L’élément reste dans la bibliothèque.</p> : null}</div>
         <div className="editor-footer-actions"><button className="delete-item danger" onClick={() => void deleteSelected()}>Supprimer le titre</button><button className="close-editor" onClick={() => setSelectedId(undefined)}>Fermer</button></div>
       </section> : null}
