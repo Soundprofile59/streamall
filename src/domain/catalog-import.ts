@@ -11,6 +11,21 @@ function releaseYear(date?: string) {
   return Number.isInteger(year) && year > 0 ? year : undefined;
 }
 
+function cleanGenres(values: string[]) {
+  const byKey = new Map<string, string>();
+  for (const value of values) {
+    const label = value.trim();
+    if (!label) continue;
+    const key = normalizeText(label);
+    if (key && !byKey.has(key)) byKey.set(key, label);
+  }
+  return [...byKey.values()].sort((a, b) => a.localeCompare(b, "fr", { sensitivity: "base" }));
+}
+
+function mergeGenres(left: string[], right: string[]) {
+  return cleanGenres([...left, ...right]);
+}
+
 export interface CatalogImportResult {
   snapshot: LibrarySnapshot;
   albumId: string;
@@ -29,6 +44,7 @@ export function importCatalogRelease(
   const artists = [...snapshot.artists];
   const albums = [...snapshot.albums];
   const tracks = [...snapshot.tracks];
+  const releaseGenres = cleanGenres(release.genres ?? []);
 
   const artistName = catalogArtist.name.trim() || "Artiste inconnu";
   let artist = artists.find((candidate) => normalizeText(candidate.name) === normalizeText(artistName));
@@ -44,40 +60,61 @@ export function importCatalogRelease(
     artistCreated = true;
   }
 
-  let album = albums.find(
+  let albumIndex = albums.findIndex(
     (candidate) => normalizeText(candidate.title) === normalizeText(release.title) && candidate.artistIds.includes(artist!.id),
   );
+  let album = albumIndex >= 0 ? albums[albumIndex] : undefined;
   let albumCreated = false;
+  let albumUpdated = false;
 
   if (!album) {
-    album = entity<Pick<Album, "title" | "artistIds" | "artwork" | "year">>(
+    album = entity<Pick<Album, "title" | "artistIds" | "artwork" | "year" | "favorite" | "genres">>(
       streamallId("album"),
       {
         title: release.title,
         artistIds: [artist.id],
         artwork: release.artwork,
         year: releaseYear(release.date),
+        favorite: false,
+        genres: releaseGenres,
       },
       now,
     );
     albums.push(album);
+    albumIndex = albums.length - 1;
     albumCreated = true;
+  } else if (releaseGenres.length) {
+    const nextGenres = mergeGenres(album.genres ?? [], releaseGenres);
+    if (nextGenres.join("\u0000") !== (album.genres ?? []).join("\u0000")) {
+      album = { ...album, genres: nextGenres, revision: album.revision + 1, updatedAt: now };
+      albums[albumIndex] = album;
+      albumUpdated = true;
+    }
   }
 
   let addedTracks = 0;
   let existingTracks = 0;
+  let tracksUpdated = 0;
 
   for (const catalogTrack of release.tracks) {
     const trackNumber = Math.max(1, catalogTrack.position);
-    const duplicate = tracks.find(
+    const duplicateIndex = tracks.findIndex(
       (candidate) =>
         candidate.albumId === album!.id &&
         candidate.trackNumber === trackNumber &&
         normalizeText(candidate.title) === normalizeText(catalogTrack.title),
     );
 
-    if (duplicate) {
+    if (duplicateIndex >= 0) {
       existingTracks += 1;
+      const duplicate = tracks[duplicateIndex]!;
+      if (releaseGenres.length) {
+        const nextGenres = mergeGenres(duplicate.genres, releaseGenres);
+        if (nextGenres.join("\u0000") !== duplicate.genres.join("\u0000")) {
+          tracks[duplicateIndex] = { ...duplicate, genres: nextGenres, revision: duplicate.revision + 1, updatedAt: now };
+          tracksUpdated += 1;
+        }
+      }
       continue;
     }
 
@@ -106,7 +143,7 @@ export function importCatalogRelease(
         trackNumber,
         duration: catalogTrack.lengthMs ? catalogTrack.lengthMs / 1000 : undefined,
         artwork: release.artwork,
-        genres: [],
+        genres: releaseGenres,
         moods: [],
         favorite: false,
         frequencyPreference: "NORMAL",
@@ -118,7 +155,10 @@ export function importCatalogRelease(
     addedTracks += 1;
   }
 
-  const changed = artistCreated || albumCreated || addedTracks > 0;
+  const genres = mergeGenres(snapshot.genres, releaseGenres);
+  const genresUpdated = genres.join("\u0000") !== snapshot.genres.join("\u0000");
+  const changed = artistCreated || albumCreated || albumUpdated || addedTracks > 0 || tracksUpdated > 0 || genresUpdated;
+
   return {
     albumId: album.id,
     artistCreated,
@@ -133,6 +173,7 @@ export function importCatalogRelease(
           artists,
           albums,
           tracks,
+          genres,
         }
       : snapshot,
   };
