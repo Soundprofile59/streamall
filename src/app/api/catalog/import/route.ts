@@ -23,6 +23,7 @@ const requestSchema = z.object({
     country: z.string().max(12).optional(),
     status: z.string().max(80).optional(),
     artwork: z.url().optional(),
+    genres: z.array(z.string().trim().min(1).max(120)).max(60).default([]),
     tracks: z.array(z.object({
       position: z.number().int().positive(),
       number: z.string().max(30).optional(),
