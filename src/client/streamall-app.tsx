@@ -13,6 +13,7 @@ import type {
   Provider,
   QueueEntry,
   RandomFilters,
+  Source,
 } from "@/domain/types";
 import { HtmlAudioAdapter, MixcloudAdapter, YouTubeAdapter } from "./playback-adapters";
 import { ServiceWorkerRegistration } from "./service-worker-registration";
@@ -49,6 +50,10 @@ function downloadJson(value: unknown, filename: string) {
   URL.revokeObjectURL(url);
 }
 
+function sameExternalResult(a: ExternalSearchResult | undefined, b: ExternalSearchResult) {
+  return a?.provider === b.provider && a.externalId === b.externalId;
+}
+
 export function StreamallApp() {
   const [library, setLibrary] = useState<LibrarySnapshot>();
   const libraryLoaded = library !== undefined;
@@ -63,6 +68,8 @@ export function StreamallApp() {
   const [searching, setSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<ExternalSearchResult[]>([]);
   const [providerStatuses, setProviderStatuses] = useState<ProviderStatus[]>([]);
+  const [previewResult, setPreviewResult] = useState<ExternalSearchResult>();
+  const previewRef = useRef<ExternalSearchResult | undefined>(undefined);
   const [queue, setQueue] = useState<QueueEntry[]>([]);
   const queueRef = useRef<QueueEntry[]>([]);
   const [past, setPast] = useState<string[]>([]);
@@ -166,8 +173,14 @@ export function StreamallApp() {
     if (!snapshot || !orchestrator) return;
     const item = allPlayable(snapshot).find((candidate) => candidate.id === itemId);
     if (!item) return;
+
     const currentId = playerRef.current.item?.id;
-    if (rememberCurrent && currentId && currentId !== itemId) {
+    const currentIsLibraryItem = Boolean(currentId && allPlayable(snapshot).some((candidate) => candidate.id === currentId));
+    if (previewRef.current) {
+      previewRef.current = undefined;
+      setPreviewResult(undefined);
+    }
+    if (rememberCurrent && currentId && currentIsLibraryItem && currentId !== itemId) {
       pastRef.current = [...pastRef.current, currentId].slice(-100);
       setPast(pastRef.current);
     }
@@ -204,7 +217,7 @@ export function StreamallApp() {
   }, [mutateLibrary]);
 
   const playNext = useCallback(async (finish = true) => {
-    if (finish && playerRef.current.item) {
+    if (finish && playerRef.current.item && !previewRef.current) {
       const progress = playerRef.current.duration ? playerRef.current.position / playerRef.current.duration : 0;
       finishHistory(progress > 0.7 ? "SKIPPED_LATE" : "SKIPPED_EARLY");
     }
@@ -222,6 +235,13 @@ export function StreamallApp() {
 
   useEffect(() => {
     endedRef.current = async () => {
+      if (previewRef.current) {
+        previewRef.current = undefined;
+        setPreviewResult(undefined);
+        await orchestratorRef.current?.stop();
+        setNotice("Préécoute terminée.");
+        return;
+      }
       finishHistory("COMPLETED");
       await playNext(false);
     };
@@ -242,6 +262,10 @@ export function StreamallApp() {
       context: playbackContext,
       onEnded: () => endedRef.current(),
       onSourceFailure(source, error) {
+        if (source.providerMetadata.streamallPreview === true) {
+          setNotice(`Préécoute ${source.provider} indisponible : ${error.message}`);
+          return;
+        }
         mutateLibrary((snapshot) => ({
           ...snapshot,
           sources: snapshot.sources.map((entry) =>
@@ -274,9 +298,71 @@ export function StreamallApp() {
     if (!response.ok) setNotice(body?.error ?? "Recherche indisponible");
   }
 
+  async function previewExternal(result: ExternalSearchResult) {
+    const snapshot = libraryRef.current;
+    const orchestrator = orchestratorRef.current;
+    if (!snapshot || !orchestrator) return;
+
+    if (sameExternalResult(previewRef.current, result)) {
+      if (playerRef.current.state === "PLAYING") {
+        await orchestrator.pause();
+        return;
+      }
+      if (playerRef.current.state === "PAUSED" || playerRef.current.state === "READY") {
+        await orchestrator.play();
+        return;
+      }
+    }
+
+    if (currentHistoryId.current) finishHistory("STOPPED");
+
+    const now = new Date().toISOString();
+    const item = {
+      id: streamallId(result.kind),
+      revision: 0,
+      createdAt: now,
+      updatedAt: now,
+      kind: result.kind,
+      title: result.title,
+      artistIds: [],
+      duration: result.duration,
+      artwork: result.artwork,
+      genres: [],
+      moods: [],
+      favorite: false,
+      frequencyPreference: "NORMAL" as const,
+      disabled: false,
+    } as PlayableItem;
+    const source: Source = {
+      id: streamallId("source"),
+      revision: 0,
+      createdAt: now,
+      updatedAt: now,
+      playableItemId: item.id,
+      provider: result.provider,
+      providerId: result.externalId,
+      url: result.url,
+      priority: Math.max(0, snapshot.settings.providerPriority.indexOf(result.provider)),
+      userEnabled: true,
+      healthStatus: "UNKNOWN",
+      providerMetadata: { ...result.providerMetadata, streamallPreview: true },
+      metadataFetchedAt: now,
+      consecutiveFailures: 0,
+    };
+
+    previewRef.current = result;
+    setPreviewResult(result);
+    setNotice(`Préécoute · ${result.artistName} — ${result.title}`);
+    await orchestrator.load(item, [source], true);
+  }
+
   function addResult(result: ExternalSearchResult) {
     const snapshot = libraryRef.current;
     if (!snapshot) return;
+    if (snapshot.sources.some((source) => source.provider === result.provider && source.providerId === result.externalId)) {
+      setNotice(`${result.title} est déjà dans votre bibliothèque.`);
+      return;
+    }
     const addition = addExternalResult(snapshot, result);
     mutateLibrary(() => addition.snapshot);
     setNotice(`${result.title} ajouté à votre bibliothèque.`);
@@ -295,11 +381,12 @@ export function StreamallApp() {
     queueRef.current = rest;
     setQueue(rest);
     setNotice(`Queue générée · seed ${seed}`);
-    if (playerRef.current.item) finishHistory("STOPPED");
+    if (playerRef.current.item && !previewRef.current) finishHistory("STOPPED");
     if (first) await playItem(first.itemId);
   }
 
   async function previous() {
+    if (previewRef.current) return;
     const previousId = pastRef.current.at(-1);
     if (!previousId) return;
     const currentId = playerRef.current.item?.id;
@@ -388,7 +475,11 @@ export function StreamallApp() {
   const items = useMemo(() => (library ? allPlayable(library) : []), [library]);
   const selected = items.find((item) => item.id === selectedId);
   const selectedSources = selected && library ? library.sources.filter((source) => source.playableItemId === selected.id) : [];
-  const currentLabel = player.item && library ? itemLabel(player.item, library) : undefined;
+  const currentLabel = previewResult
+    ? { title: previewResult.title, artist: previewResult.artistName }
+    : player.item && library
+      ? itemLabel(player.item, library)
+      : undefined;
 
   if (!library) {
     return <main className="loading-shell"><div className="brand-mark">S</div><p>Chargement de la discothèque…</p><p className="muted">{notice}</p></main>;
@@ -428,13 +519,21 @@ export function StreamallApp() {
             <div className="search-results">
               <div className="section-heading"><div><p className="eyebrow">RÉSULTATS EXTERNES</p><h2>{searchResults.length} résultat{searchResults.length > 1 ? "s" : ""}</h2></div><button className="text-button" onClick={() => { setSearchResults([]); setProviderStatuses([]); }}>Fermer</button></div>
               <div className="provider-statuses">{providerStatuses.map((status) => <span key={status.provider} className={`provider ${status.status.toLowerCase()}`} title={status.message}>{status.provider} · {status.status}</span>)}</div>
-              <div className="result-grid">{searchResults.map((result) => (
-                <article key={`${result.provider}:${result.externalId}`} className="result-card">
-                  <div className="artwork small-art" style={result.artwork ? { backgroundImage: `url(${JSON.stringify(result.artwork).slice(1, -1)})` } : undefined}><span>{result.title.slice(0, 1)}</span></div>
-                  <div><span className={`provider ${result.provider}`}>{result.provider}</span><h3>{result.title}</h3><p>{result.artistName}</p></div>
-                  <div className="result-actions"><button onClick={() => addResult(result)}>+ Ajouter</button>{selected ? <button title={`Associer à ${selected.title}`} onClick={() => { mutateLibrary((snapshot) => attachExternalSource(snapshot, selected.id, result)); setNotice(`Source ${result.provider} associée à ${selected.title}.`); }}>Associer</button> : null}</div>
-                </article>
-              ))}</div>
+              <div className="result-grid">{searchResults.map((result) => {
+                const isPreviewing = sameExternalResult(previewResult, result);
+                const isAdded = library.sources.some((source) => source.provider === result.provider && source.providerId === result.externalId);
+                return (
+                  <article key={`${result.provider}:${result.externalId}`} className={`result-card ${isPreviewing ? "previewing" : ""}`}>
+                    <div className="artwork small-art" style={result.artwork ? { backgroundImage: `url(${JSON.stringify(result.artwork).slice(1, -1)})` } : undefined}><span>{result.title.slice(0, 1)}</span></div>
+                    <div><span className={`provider ${result.provider}`}>{result.provider}</span><h3>{result.title}</h3><p>{result.artistName}{result.albumTitle ? ` · ${result.albumTitle}` : ""}{result.duration ? ` · ${formatTime(result.duration)}` : ""}</p></div>
+                    <div className="result-actions">
+                      <button className={`preview-button ${isPreviewing ? "active" : ""}`} onClick={() => void previewExternal(result)}>{isPreviewing && player.state === "PLAYING" ? "Ⅱ Pause" : isPreviewing ? "▶ Reprendre" : "▶ Écouter"}</button>
+                      <button disabled={isAdded} onClick={() => addResult(result)}>{isAdded ? "✓ Ajouté" : "+ Ajouter"}</button>
+                      {selected ? <button title={`Associer à ${selected.title}`} onClick={() => { mutateLibrary((snapshot) => attachExternalSource(snapshot, selected.id, result)); setNotice(`Source ${result.provider} associée à ${selected.title}.`); }}>Associer</button> : null}
+                    </div>
+                  </article>
+                );
+              })}</div>
             </div>
           ) : (
             <>
@@ -473,7 +572,7 @@ export function StreamallApp() {
           <div className={`artwork hero-art ${["youtube", "mixcloud"].includes(player.source?.provider ?? "") ? "hidden" : ""}`} style={player.item?.artwork ? { backgroundImage: `url(${JSON.stringify(player.item.artwork).slice(1, -1)})` } : undefined}><span>{player.item?.title.slice(0, 1) ?? "S"}</span></div>
         </div>
         <div className="player-details">
-          <p className="eyebrow">{player.source ? `SOURCE · ${player.source.provider.toUpperCase()}` : "NOW PLAYING"}</p>
+          <p className="eyebrow">{previewResult ? `PRÉÉCOUTE${player.source ? ` · ${player.source.provider.toUpperCase()}` : ""}` : player.source ? `SOURCE · ${player.source.provider.toUpperCase()}` : "NOW PLAYING"}</p>
           <h1>{currentLabel?.title ?? "Laissez Streamall choisir"}</h1>
           <p>{currentLabel?.artist ?? "Appuyez sur Random pour commencer"}</p>
           {player.error ? <p className="player-error">{player.error}</p> : null}
@@ -481,9 +580,9 @@ export function StreamallApp() {
           <div className="progress"><span style={{ width: `${player.duration ? Math.min(100, (player.position / player.duration) * 100) : 0}%` }} /></div>
           <div className="time"><span>{formatTime(player.position)}</span><span>{formatTime(player.duration)}</span></div>
           <div className="transport">
-            <button onClick={() => void previous()} disabled={!past.length}>↶</button>
+            <button onClick={() => void previous()} disabled={Boolean(previewResult) || !past.length}>↶</button>
             <button className="play-button" onClick={() => player.state === "PLAYING" ? void orchestratorRef.current?.pause() : void orchestratorRef.current?.play()}>{player.state === "PLAYING" ? "Ⅱ" : "▶"}</button>
-            <button onClick={() => void playNext()}>↷</button>
+            <button onClick={() => void playNext()} disabled={Boolean(previewResult)}>↷</button>
           </div>
         </div>
         <div className="random-panel">
