@@ -13,6 +13,7 @@ import "./collection-view.css";
 import "./album-info.css";
 import "./v05-controls.css";
 import "./v07-search.css";
+import "./v07-library.css";
 import "./build-badge.css";
 
 const APP_VERSION = "0.7.0";
