@@ -16,6 +16,7 @@ export interface CatalogReleaseGroup {
   firstReleaseDate?: string;
   artistName?: string;
   artwork?: string;
+  genres: string[];
 }
 
 export interface CatalogTrack {
@@ -34,6 +35,7 @@ export interface CatalogReleaseDetail {
   country?: string;
   status?: string;
   artwork?: string;
+  genres: string[];
   tracks: CatalogTrack[];
 }
 
