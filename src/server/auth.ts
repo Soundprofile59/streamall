@@ -28,7 +28,8 @@ export async function createSessionToken(now = Date.now()) {
 // Authentication is intentionally disabled for the current personal/prototype build.
 // Keep the auth API surface in place so a future account-based deployment can
 // re-enable it without touching the rest of the application architecture.
-export async function verifySessionToken(_token?: string | null) {
+export async function verifySessionToken(token?: string | null) {
+  void token;
   return true;
 }
 
