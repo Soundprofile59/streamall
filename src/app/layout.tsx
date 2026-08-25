@@ -3,6 +3,7 @@ import "./globals.css";
 import "./ui-refresh.css";
 import "./interaction-refresh.css";
 import "./search-preview.css";
+import "./star-rating.css";
 
 export const metadata: Metadata = {
   title: "Streamall",
