@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
-import type { CatalogApiResponse, CatalogArtist, CatalogReleaseDetail, CatalogReleaseGroup, CatalogTrack } from "@/domain/catalog";
+import type { CatalogApiResponse, CatalogArtist, CatalogReleaseDetail, CatalogReleaseGroup } from "@/domain/catalog";
 
 function yearOf(date?: string) {
   return date?.slice(0, 4) || "—";
@@ -16,19 +16,13 @@ function formatDuration(ms?: number) {
 async function catalogRequest(url: string): Promise<CatalogApiResponse> {
   const response = await fetch(url);
   const body = (await response.json().catch(() => null)) as (CatalogApiResponse & { message?: string; error?: string }) | null;
-  if (!response.ok || !body) throw new Error(body?.message ?? body?.error ?? "Catalogue indisponible");
+  if (!response.ok || !body) {
+    const message = body?.error === "CATALOG_UNAVAILABLE"
+      ? "MusicBrainz est temporairement indisponible. Streamall a déjà réessayé automatiquement ; relancez la recherche dans quelques secondes."
+      : body?.message ?? body?.error ?? "Catalogue indisponible";
+    throw new Error(message);
+  }
   return body;
-}
-
-function pushTrackToMainSearch(track: CatalogTrack) {
-  const input = document.querySelector<HTMLInputElement>('input[aria-label="Recherche multi-provider"]');
-  if (!input) return false;
-  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
-  setter?.call(input, `${track.artistName} ${track.title}`);
-  input.dispatchEvent(new Event("input", { bubbles: true }));
-  input.form?.requestSubmit();
-  input.focus();
-  return true;
 }
 
 export function CatalogBrowser() {
@@ -188,10 +182,10 @@ export function CatalogBrowser() {
         if (resolveResponse.ok && resolveBody) {
           sourceSummary = `${resolveBody.matchedTracks ?? 0} piste${(resolveBody.matchedTracks ?? 0) > 1 ? "s" : ""} reliée${(resolveBody.matchedTracks ?? 0) > 1 ? "s" : ""} · ${resolveBody.addedSources ?? 0} source${(resolveBody.addedSources ?? 0) > 1 ? "s" : ""}`;
         } else {
-          sourceSummary = "sources à compléter manuellement";
+          sourceSummary = "sources encore non résolues";
         }
       } catch {
-        sourceSummary = "sources à compléter manuellement";
+        sourceSummary = "sources encore non résolues";
       }
 
       const trackSummary = imported
@@ -205,10 +199,6 @@ export function CatalogBrowser() {
     } finally {
       setImporting(false);
     }
-  }
-
-  function searchSources(track: CatalogTrack) {
-    if (pushTrackToMainSearch(track)) setOpen(false);
   }
 
   return (
@@ -242,7 +232,7 @@ export function CatalogBrowser() {
                   <div className="catalog-release-hero">
                     <div className="catalog-cover large" style={selectedRelease.artwork ? { backgroundImage: `url("${selectedRelease.artwork}")` } : undefined}>▦</div>
                     <div className="catalog-release-copy">
-                      <p>{selectedRelease.status ?? "Release"} · {yearOf(selectedRelease.date)}{selectedRelease.country ? ` · ${selectedRelease.country}` : ""}</p>
+                      <p>{selectedArtist?.name ?? "Artiste inconnu"} · {selectedRelease.status ?? "Release"} · {yearOf(selectedRelease.date)}{selectedRelease.country ? ` · ${selectedRelease.country}` : ""}</p>
                       <h3>{selectedRelease.title}</h3>
                       <span>{selectedRelease.tracks.length} piste{selectedRelease.tracks.length > 1 ? "s" : ""}</span>
                       {selectedRelease.genres.length ? <div className="catalog-genre-list">{selectedRelease.genres.map((genre) => <span key={genre}>{genre}</span>)}</div> : null}
@@ -260,7 +250,6 @@ export function CatalogBrowser() {
                       <span className="catalog-track-number">{track.number ?? track.position}</span>
                       <span><strong>{track.title}</strong><small>{track.artistName}</small></span>
                       <span className="catalog-track-duration">{formatDuration(track.lengthMs)}</span>
-                      <button type="button" onClick={() => searchSources(track)}>Sources</button>
                     </div>)}
                   </div>
                 </> : <div className="catalog-empty">Aucune édition officielle exploitable trouvée pour cette sortie.</div>}
@@ -275,7 +264,7 @@ export function CatalogBrowser() {
                 <div className="catalog-release-grid">
                   {releases.map((release) => <button className="catalog-release-card" type="button" key={release.id} onClick={() => void loadRelease(release)}>
                     <div className="catalog-cover" style={release.artwork ? { backgroundImage: `url("${release.artwork}")` } : undefined}>▦</div>
-                    <span><strong>{release.title}</strong><small>{yearOf(release.firstReleaseDate)} · {release.primaryType ?? "Release"}{release.secondaryTypes.length ? ` · ${release.secondaryTypes.join(", ")}` : ""}{release.genres.length ? ` · ${release.genres.slice(0, 2).join(", ")}` : ""}</small></span>
+                    <span><strong>{release.title}</strong><small>{release.artistName ?? selectedArtist.name} · {yearOf(release.firstReleaseDate)} · {release.primaryType ?? "Release"}{release.secondaryTypes.length ? ` · ${release.secondaryTypes.join(", ")}` : ""}{release.genres.length ? ` · ${release.genres.slice(0, 2).join(", ")}` : ""}</small></span>
                   </button>)}
                   {!loading && !releases.length ? <div className="catalog-empty">Aucun album ou EP trouvé.</div> : null}
                 </div>
@@ -296,7 +285,7 @@ export function CatalogBrowser() {
           </div>
 
           <footer className="catalog-footer">
-            <span>MusicBrainz fournit la structure canonique et les genres. Streamall relie ensuite les pistes aux sources YouTube, Audius et Jamendo ; les correspondances incertaines restent volontairement sans source.</span>
+            <span>MusicBrainz fournit l’identité, la discographie et les genres. Streamall gère ensuite les sources de lecture automatiquement en interne.</span>
           </footer>
         </section>
       </div> : null}
