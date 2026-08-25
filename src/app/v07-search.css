@@ -47,6 +47,13 @@
   overflow: hidden !important;
 }
 
+/* Les plateformes de lecture sont désormais une plomberie interne. */
+.catalog-track > button,
+.album-info-source-block,
+.collection-find-source {
+  display: none !important;
+}
+
 @media (max-width: 760px) {
   .searchbar { padding-left: 5px; padding-top: 34px; }
   .search-mode-toggle {
