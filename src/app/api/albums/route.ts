@@ -9,6 +9,7 @@ const patchSchema = z.object({
   albumId: z.string().min(1).max(160),
   title: z.string().trim().min(1).max(400).optional(),
   year: z.number().int().min(1000).max(3000).optional(),
+  rating: z.number().int().min(1).max(5).nullable().optional(),
 });
 
 const deleteSchema = z.object({ albumId: z.string().min(1).max(160) });
@@ -29,7 +30,11 @@ export async function PATCH(request: Request) {
     const album = current.albums.find((candidate) => candidate.id === parsed.data.albumId);
     if (!album) return Response.json({ error: "ALBUM_NOT_FOUND" }, { status: 404 });
 
-    const updated = updateAlbumMetadata(current, parsed.data.albumId, { title: parsed.data.title, year: parsed.data.year });
+    const updated = updateAlbumMetadata(current, parsed.data.albumId, {
+      title: parsed.data.title,
+      year: parsed.data.year,
+      rating: parsed.data.rating,
+    });
     const persisted = await repository.save(updated, current.revision, crypto.randomUUID());
     return Response.json({ album: persisted.albums.find((candidate) => candidate.id === parsed.data.albumId), revision: persisted.revision });
   } catch (error) {
