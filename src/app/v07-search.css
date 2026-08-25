@@ -50,7 +50,8 @@
 /* Les plateformes de lecture sont désormais une plomberie interne. */
 .catalog-track > button,
 .album-info-source-block,
-.collection-find-source {
+.collection-find-source,
+.collection-correspondence-note {
   display: none !important;
 }
 
