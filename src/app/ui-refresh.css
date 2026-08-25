@@ -108,6 +108,11 @@ body {
   font-size: 10px;
 }
 
+/* Auth is disabled on this development branch; keep obsolete logout out of the UI. */
+.nav-actions > button {
+  display: none;
+}
+
 .content-panel {
   padding: 15px 17px;
 }
@@ -367,6 +372,99 @@ select {
   margin-top: 13px;
 }
 
+/* Refresh 1.1 — polish without changing behavior */
+.library-nav,
+.content-panel,
+.queue-panel,
+.editor-drawer {
+  scrollbar-width: thin;
+  scrollbar-color: #353c45 transparent;
+}
+
+.library-nav::-webkit-scrollbar,
+.content-panel::-webkit-scrollbar,
+.queue-panel::-webkit-scrollbar,
+.editor-drawer::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+.library-nav::-webkit-scrollbar-thumb,
+.content-panel::-webkit-scrollbar-thumb,
+.queue-panel::-webkit-scrollbar-thumb,
+.editor-drawer::-webkit-scrollbar-thumb {
+  border-radius: 10px;
+  background: #353c45;
+}
+
+.library-row,
+.result-card,
+.queue-row,
+.tag-tile,
+.searchbar,
+button {
+  transition: background-color .14s ease, border-color .14s ease, opacity .14s ease, transform .14s ease;
+}
+
+.result-card:hover {
+  border-color: #38414a;
+  background: #171b20;
+}
+
+.result-card button:hover,
+.library-row > button:hover,
+.sources button:hover {
+  transform: translateY(-1px);
+}
+
+.library-row:hover {
+  background: #171b20;
+}
+
+.library-row.selected {
+  background: rgba(187, 255, 74, .055);
+  border-color: rgba(187, 255, 74, .30);
+}
+
+.searchbar button:hover:not(:disabled) {
+  background: #242a31;
+}
+
+.searchbar button:disabled {
+  opacity: .42;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+.file-action:focus-visible {
+  outline: 2px solid rgba(187, 255, 74, .65);
+  outline-offset: 2px;
+}
+
+.content-panel > .search-results > .section-heading,
+.content-panel > .section-heading {
+  position: sticky;
+  top: -15px;
+  z-index: 3;
+  margin-left: -17px;
+  margin-right: -17px;
+  padding: 15px 17px 10px;
+  background: linear-gradient(to bottom, rgba(16, 19, 23, .99) 72%, rgba(16, 19, 23, .90));
+  backdrop-filter: blur(10px);
+}
+
+.queue-panel .section-heading {
+  position: sticky;
+  top: -14px;
+  z-index: 2;
+  margin: -14px -10px 9px;
+  padding: 14px 10px 7px;
+  background: rgba(16, 19, 23, .98);
+  backdrop-filter: blur(10px);
+}
+
 @media (min-width: 1181px) and (min-height: 760px) {
   body {
     display: grid;
@@ -435,5 +533,14 @@ select {
     inset: 7px;
     width: auto;
     padding: 17px 13px;
+  }
+
+  .content-panel > .search-results > .section-heading,
+  .content-panel > .section-heading {
+    top: -18px;
+    margin-left: -10px;
+    margin-right: -10px;
+    padding-left: 10px;
+    padding-right: 10px;
   }
 }
