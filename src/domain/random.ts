@@ -31,7 +31,7 @@ function matchesFilters(item: PlayableItem, filters: RandomFilters) {
   return true;
 }
 
-function hardCandidates(snapshot: LibrarySnapshot, filters: RandomFilters) {
+function hardCandidates(snapshot: LibrarySnapshot, filters: RandomFilters, excludedItemIds: ReadonlySet<string>) {
   const disabledArtists = new Set(snapshot.artists.filter((artist) => artist.disabled).map((artist) => artist.id));
   const playableIds = new Set(
     snapshot.sources
@@ -40,6 +40,7 @@ function hardCandidates(snapshot: LibrarySnapshot, filters: RandomFilters) {
   );
   return allPlayable(snapshot).filter(
     (item) =>
+      !excludedItemIds.has(item.id) &&
       !item.disabled &&
       !item.artistIds.some((id) => disabledArtists.has(id)) &&
       playableIds.has(item.id) &&
@@ -150,8 +151,9 @@ export function selectRandomItem(
   snapshot: LibrarySnapshot,
   filters: RandomFilters = {},
   seed = Date.now(),
+  excludedItemIds: ReadonlySet<string> = new Set<string>(),
 ): { item?: PlayableItem; diagnostic: RandomDiagnostic } {
-  const candidates = hardCandidates(snapshot, filters);
+  const candidates = hardCandidates(snapshot, filters, excludedItemIds);
   const referenceTime = snapshotReferenceTime(snapshot);
   if (!candidates.length) {
     return { diagnostic: { seed, candidateCount: 0, relaxation: "NONE", reason: "NO_HARD_CANDIDATE" } };
@@ -184,10 +186,14 @@ export function generateRandomQueue(
   const referenceTime = snapshotReferenceTime(snapshot);
   const entries: QueueEntry[] = [];
   const diagnostics: RandomDiagnostic[] = [];
+  const queuedIds = new Set<string>();
+
   for (let index = 0; index < size; index += 1) {
-    const result = selectRandomItem(working, filters, seed + index * 104729);
+    const result = selectRandomItem(working, filters, seed + index * 104729, queuedIds);
     diagnostics.push(result.diagnostic);
     if (!result.item) break;
+
+    queuedIds.add(result.item.id);
     entries.push({
       id: streamallId("queue"),
       itemId: result.item.id,
