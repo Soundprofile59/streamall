@@ -28,6 +28,7 @@ export const albumSchema = entityBase.extend({
   artistIds: z.array(z.string()),
   artwork: z.url().optional(),
   year: z.number().int().optional(),
+  rating: z.number().int().min(1).max(5).optional(),
   favorite: z.boolean().optional(),
   genres: z.array(z.string().min(1)).optional(),
 });
