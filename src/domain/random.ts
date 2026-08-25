@@ -95,8 +95,14 @@ export function starRatingWeight(rating?: number) {
   return ({ 1: 0.18, 2: 0.5, 3: 1, 4: 1.7, 5: 2.7 } as Record<number, number>)[rating] ?? 1;
 }
 
-function preferenceWeight(item: PlayableItem) {
+function preferenceWeight(item: PlayableItem, snapshot: LibrarySnapshot) {
   if (item.rating !== undefined) return starRatingWeight(item.rating);
+
+  if (item.kind === "track" && item.albumId) {
+    const album = snapshot.albums.find((candidate) => candidate.id === item.albumId);
+    const albumRating = album?.rating ?? (album?.favorite ? 5 : undefined);
+    if (albumRating !== undefined) return starRatingWeight(albumRating);
+  }
 
   // Backward compatibility for libraries created before star ratings.
   let legacy = 1;
@@ -112,7 +118,7 @@ function itemWeight(
   settings: RandomSettings,
   referenceTime: number,
 ) {
-  let weight = preferenceWeight(item);
+  let weight = preferenceWeight(item, snapshot);
   if (item.kind === "mix") {
     weight *= { NEVER: 0, RARE: 0.18, NORMAL: 0.65, FREQUENT: 1.25 }[settings.mixFrequency];
     if (item.duration && item.duration > 5400) weight *= 0.55;
