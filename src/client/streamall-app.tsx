@@ -485,11 +485,12 @@ export function StreamallApp() {
   async function ensureAlbumPlayable(albumId: string) {
     let snapshot = libraryRef.current;
     if (!snapshot) return [];
+    const albumTracks = snapshot.tracks.filter((track) => track.albumId === albumId);
     let playable = albumPlayableTracks(snapshot, albumId);
-    if (playable.length) return playable;
+    if (albumTracks.length > 0 && playable.length === albumTracks.length) return playable;
 
     const album = snapshot.albums.find((candidate) => candidate.id === albumId);
-    setNotice(`Recherche automatique des sources${album ? ` pour ${album.title}` : ""}…`);
+    setNotice(`Recherche automatique des sources manquantes${album ? ` pour ${album.title}` : ""}…`);
     try {
       const response = await fetch("/api/albums/resolve-sources", {
         method: "POST",
@@ -501,11 +502,12 @@ export function StreamallApp() {
       snapshot = await reloadLibrary();
       playable = albumPlayableTracks(snapshot, albumId);
       if (!playable.length) setNotice("Aucune source suffisamment sûre n’a encore été trouvée pour cet album.");
+      else if (playable.length < albumTracks.length) setNotice(`${playable.length}/${albumTracks.length} pistes ont une source jouable pour le moment.`);
       else setNotice(`${playable.length} piste${playable.length > 1 ? "s" : ""} prête${playable.length > 1 ? "s" : ""} à être lue${playable.length > 1 ? "s" : ""}.`);
       return playable;
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Recherche de sources impossible");
-      return [];
+      return playable;
     }
   }
 
@@ -514,8 +516,11 @@ export function StreamallApp() {
     const entries = playable.map((item) => ({ id: streamallId("queue"), itemId: item.id, generatedAt: new Date().toISOString(), reason: "ALBUM" as const }));
     const [first, ...rest] = entries;
     if (!first) return;
-    queueRef.current = rest;
-    setQueue(rest);
+    const existingQueue = queueRef.current;
+    queueRef.current = [...rest, ...existingQueue];
+    setQueue(queueRef.current);
+    const album = libraryRef.current?.albums.find((candidate) => candidate.id === albumId);
+    setNotice(`${album?.title ?? "Album"} lancé · ${rest.length} piste${rest.length > 1 ? "s" : ""} prioritaire${rest.length > 1 ? "s" : ""} dans À suivre.`);
     await playItem(first.itemId);
   }
 
@@ -526,14 +531,7 @@ export function StreamallApp() {
     queueRef.current = [...queueRef.current, ...additions];
     setQueue(queueRef.current);
     const album = libraryRef.current?.albums.find((candidate) => candidate.id === albumId);
-    setNotice(`${album?.title ?? "Album"} ajouté à la file · ${additions.length} piste${additions.length > 1 ? "s" : ""}.`);
-  }
-
-  function toggleAlbumFavorite(albumId: string) {
-    mutateLibrary((snapshot) => ({
-      ...snapshot,
-      albums: snapshot.albums.map((album) => album.id === albumId ? { ...album, favorite: !album.favorite, revision: album.revision + 1, updatedAt: new Date().toISOString() } : album),
-    }));
+    setNotice(`${album?.title ?? "Album"} ajouté à la fin de la file · ${additions.length} piste${additions.length > 1 ? "s" : ""}.`);
   }
 
   function changeVolume(value: number) {
@@ -654,7 +652,6 @@ export function StreamallApp() {
               onPlayItem={(itemId) => void playItem(itemId)}
               onPlayAlbum={(albumId) => void playAlbum(albumId)}
               onQueueAlbum={(albumId) => void queueAlbum(albumId)}
-              onToggleAlbumFavorite={toggleAlbumFavorite}
               onToggleArtist={(artistId) => mutateLibrary((snapshot) => ({
                 ...snapshot,
                 artists: snapshot.artists.map((entry) => entry.id === artistId ? { ...entry, disabled: !entry.disabled, revision: entry.revision + 1, updatedAt: new Date().toISOString() } : entry),
