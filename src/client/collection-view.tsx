@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import type { Album, Artist, LibrarySnapshot, PlayableItem, Track } from "@/domain/types";
 
 export type LibrarySection = "tracks" | "mixes" | "albums" | "artists" | "genres" | "moods";
@@ -165,10 +165,6 @@ export function CollectionView({ section, library, selectedId, onSelectItem, onP
   const [selectedAlbumId, setSelectedAlbumId] = useState<string>();
   const selectedAlbum = library.albums.find((album) => album.id === selectedAlbumId);
   const looseTracks = useMemo(() => library.tracks.filter((track) => !track.albumId), [library.tracks]);
-
-  useEffect(() => {
-    if (section !== "albums") setSelectedAlbumId(undefined);
-  }, [section]);
 
   const title = section === "albums" ? "Vos albums" : section === "tracks" ? "Tous les titres" : section === "mixes" ? "Vos mixes" : section === "artists" ? "Vos artistes" : section === "genres" ? "Genres" : "Ambiances";
 
