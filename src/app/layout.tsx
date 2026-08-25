@@ -1,5 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { CatalogBrowser } from "@/client/catalog-browser";
+import { LibraryArtistBrowser } from "@/client/library-artist-browser";
+import { SearchModeBridge } from "@/client/search-mode-bridge";
 import "./globals.css";
 import "./ui-refresh.css";
 import "./interaction-refresh.css";
@@ -10,9 +12,10 @@ import "./catalog-import.css";
 import "./collection-view.css";
 import "./album-info.css";
 import "./v05-controls.css";
+import "./v07-search.css";
 import "./build-badge.css";
 
-const APP_VERSION = "0.6.0";
+const APP_VERSION = "0.7.0";
 
 export const metadata: Metadata = {
   title: "Streamall",
@@ -34,6 +37,8 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       <body>
         {children}
         <CatalogBrowser />
+        <LibraryArtistBrowser />
+        <SearchModeBridge />
         <div className="build-badge" title={`Streamall ${buildLabel}`} aria-label={`Version Streamall ${buildLabel}`}>
           {buildLabel}
         </div>
