@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useMemo, useState, type FormEvent } from "react";
 import type { Album, Artist, LibrarySnapshot, PlayableItem } from "@/domain/types";
 
 export type LibrarySection = "tracks" | "mixes" | "albums" | "artists" | "genres" | "moods";
@@ -349,12 +349,6 @@ export function CollectionView({ section, library, selectedId, onSelectItem, onP
   const [selectedAlbumId, setSelectedAlbumId] = useState<string>();
   const [selectedArtistId, setSelectedArtistId] = useState<string>();
   const [inspectedAlbumId, setInspectedAlbumId] = useState<string>();
-
-  useEffect(() => {
-    setSelectedAlbumId(undefined);
-    setInspectedAlbumId(undefined);
-    if (section !== "artists") setSelectedArtistId(undefined);
-  }, [section]);
 
   const selectedAlbum = library.albums.find((album) => album.id === selectedAlbumId);
   const selectedArtist = library.artists.find((artist) => artist.id === selectedArtistId);
