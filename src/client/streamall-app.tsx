@@ -15,12 +15,15 @@ import type {
   RandomFilters,
   Source,
 } from "@/domain/types";
+import { CollectionView, type LibrarySection } from "./collection-view";
 import { HtmlAudioAdapter, MixcloudAdapter, YouTubeAdapter } from "./playback-adapters";
 import { ServiceWorkerRegistration } from "./service-worker-registration";
 
-type Section = "tracks" | "mixes" | "albums" | "artists" | "genres" | "moods";
+type Section = LibrarySection;
 type ProviderStatus = { provider: Provider; status: string; message?: string };
 type EditablePatch = Partial<Pick<PlayableItem, "moods" | "genres" | "energy" | "rating" | "favorite" | "frequencyPreference" | "disabled">>;
+
+const SECTIONS: Section[] = ["tracks", "mixes", "albums", "artists", "genres", "moods"];
 
 function playbackContext() {
   return {
@@ -117,6 +120,8 @@ export function StreamallApp() {
         libraryRef.current = snapshot;
         persistedRevision.current = snapshot.revision;
         setLibrary(snapshot);
+        const requested = new URLSearchParams(window.location.search).get("section");
+        if (requested && SECTIONS.includes(requested as Section)) setSection(requested as Section);
       })
       .catch((error: Error) => setNotice(error.message));
   }, []);
@@ -212,7 +217,7 @@ export function StreamallApp() {
     }
     const sources = snapshot.sources.filter((source) => source.playableItemId === itemId);
     if (!sources.length) {
-      setNotice("Cet élément n’a plus de Source. Son identité Streamall est conservée.");
+      setNotice("Cet élément n’a pas encore de Source. Son identité Streamall est conservée.");
       return;
     }
     const ordered = resolveSources(sources, playbackContext());
@@ -393,11 +398,11 @@ export function StreamallApp() {
     setNotice(`${result.title} ajouté à votre bibliothèque.`);
   }
 
-  async function startRandom() {
+  async function startRandom(activeFilters: RandomFilters = filters) {
     const snapshot = libraryRef.current;
     if (!snapshot) return;
     const seed = Date.now();
-    const generated = generateRandomQueue(snapshot, filters, seed, snapshot.settings.random.queueTarget);
+    const generated = generateRandomQueue(snapshot, activeFilters, seed, snapshot.settings.random.queueTarget);
     if (!generated.entries.length) {
       setNotice("Aucun élément jouable ne respecte les filtres actifs.");
       return;
@@ -460,12 +465,18 @@ export function StreamallApp() {
   function playAlbum(albumId: string) {
     const snapshot = libraryRef.current;
     if (!snapshot) return;
-    const items = snapshot.tracks.filter((track) => track.albumId === albumId).sort((a, b) => (a.trackNumber ?? 999) - (b.trackNumber ?? 999));
+    const items = snapshot.tracks
+      .filter((track) => track.albumId === albumId && snapshot.sources.some((source) => source.playableItemId === track.id && source.userEnabled))
+      .sort((a, b) => (a.trackNumber ?? 999) - (b.trackNumber ?? 999));
     const entries = items.map((item) => ({ id: streamallId("queue"), itemId: item.id, generatedAt: new Date().toISOString(), reason: "ALBUM" as const }));
     const [first, ...rest] = entries;
+    if (!first) {
+      setNotice("Cet album n’a encore aucune Source de lecture. Utilisez « Trouver » sur une piste.");
+      return;
+    }
     queueRef.current = rest;
     setQueue(rest);
-    if (first) void playItem(first.itemId);
+    void playItem(first.itemId);
   }
 
   async function importBackup(event: ChangeEvent<HTMLInputElement>) {
@@ -511,13 +522,11 @@ export function StreamallApp() {
     return <main className="loading-shell"><div className="brand-mark">S</div><p>Chargement de la discothèque…</p><p className="muted">{notice}</p></main>;
   }
 
-  const visibleItems = section === "tracks" ? library.tracks : section === "mixes" ? library.mixes : [];
-
   return (
     <main className="app-shell">
       <ServiceWorkerRegistration />
       <header className="topbar">
-        <button className="brand" onClick={() => setSection("tracks")}><span className="brand-mark small">S</span><span>STREAMALL</span></button>
+        <button className="brand" onClick={() => setSection(library.albums.length ? "albums" : "tracks")}><span className="brand-mark small">S</span><span>STREAMALL</span></button>
         <form className="searchbar" onSubmit={(event) => { event.preventDefault(); void runSearch(); }}>
           <input aria-label="Recherche multi-provider" placeholder="Chercher artiste, titre ou mix…" value={query} onChange={(event) => setQuery(event.target.value)} />
           <button type="submit" disabled={searching || query.trim().length < 2}>{searching ? "…" : "Rechercher"}</button>
@@ -528,7 +537,7 @@ export function StreamallApp() {
       <section className="workspace">
         <aside className="library-nav panel">
           <p className="eyebrow">BIBLIOTHÈQUE</p>
-          {(["tracks", "mixes", "albums", "artists", "genres", "moods"] as Section[]).map((entry) => (
+          {SECTIONS.map((entry) => (
             <button key={entry} className={section === entry ? "active" : ""} onClick={() => setSection(entry)}>
               {{ tracks: "Morceaux", mixes: "Mixes", albums: "Albums", artists: "Artistes", genres: "Genres", moods: "Moods" }[entry]}
               <span>{entry === "tracks" ? library.tracks.length : entry === "mixes" ? library.mixes.length : entry === "albums" ? library.albums.length : entry === "artists" ? library.artists.length : entry === "genres" ? library.genres.length : library.moods.length}</span>
@@ -562,23 +571,23 @@ export function StreamallApp() {
               })}</div>
             </div>
           ) : (
-            <>
-              <div className="section-heading"><div><p className="eyebrow">{section.toUpperCase()}</p><h2>Votre collection</h2></div></div>
-              <div className="library-list">
-                {visibleItems.map((item) => {
-                  const label = itemLabel(item, library);
-                  const rating = effectiveRating(item);
-                  const tags = [...item.moods, ...item.genres].slice(0, 2).join(" · ");
-                  return <button key={item.id} className={`library-row ${selectedId === item.id ? "selected" : ""}`} onClick={() => void playItem(item.id)}>
-                    <span className="row-play">▶</span><span><strong>{label.title}</strong><small>{label.artist} · {item.kind === "mix" ? "Mix" : formatTime(item.duration)}</small></span><span className="row-tags">{`${rating ? `${"★".repeat(rating)} · ` : ""}${tags || "À classer"}`}</span>
-                  </button>;
-                })}
-                {section === "albums" && library.albums.map((album) => <div key={album.id} className="library-row static"><span className="row-play">▦</span><span><strong>{album.title}</strong><small>{library.tracks.filter((track) => track.albumId === album.id).length} morceau(x)</small></span><button onClick={() => playAlbum(album.id)}>Lire</button></div>)}
-                {section === "artists" && library.artists.map((artist) => <div key={artist.id} className="library-row static"><span className="row-play">◎</span><span><strong>{artist.name}</strong><small>{items.filter((item) => item.artistIds.includes(artist.id)).length} contenu(s)</small></span><button className={artist.disabled ? "danger" : ""} onClick={() => mutateLibrary((snapshot) => ({ ...snapshot, artists: snapshot.artists.map((entry) => entry.id === artist.id ? { ...entry, disabled: !entry.disabled, revision: entry.revision + 1, updatedAt: new Date().toISOString() } : entry) }))}>{artist.disabled ? "Réactiver" : "Désactiver"}</button></div>)}
-                {(section === "genres" ? library.genres : section === "moods" ? library.moods : []).map((tag) => <button key={tag} className="tag-tile" onClick={() => { setFilters(section === "genres" ? { genres: [tag] } : { moods: [tag] }); void startRandom(); }}><strong>{tag}</strong><span>Lancer Random</span></button>)}
-                {!visibleItems.length && ["tracks", "mixes"].includes(section) ? <div className="empty-state"><p>Votre collection est prête à être remplie.</p><span>Utilisez la recherche multi-provider ci-dessus.</span></div> : null}
-              </div>
-            </>
+            <CollectionView
+              section={section}
+              library={library}
+              selectedId={selectedId}
+              onSelectItem={setSelectedId}
+              onPlayItem={(itemId) => void playItem(itemId)}
+              onPlayAlbum={playAlbum}
+              onToggleArtist={(artistId) => mutateLibrary((snapshot) => ({
+                ...snapshot,
+                artists: snapshot.artists.map((entry) => entry.id === artistId ? { ...entry, disabled: !entry.disabled, revision: entry.revision + 1, updatedAt: new Date().toISOString() } : entry),
+              }))}
+              onRandomTag={(kind, tag) => {
+                const nextFilters: RandomFilters = kind === "genres" ? { genres: [tag] } : { moods: [tag] };
+                setFilters(nextFilters);
+                void startRandom(nextFilters);
+              }}
+            />
           )}
         </section>
 
