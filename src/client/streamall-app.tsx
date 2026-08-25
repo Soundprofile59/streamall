@@ -1,8 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
-import { useRouter } from "next/navigation";
-import { addExternalResult, allPlayable, attachExternalSource, removeSource, streamallId } from "@/domain/library";
+import { addExternalResult, allPlayable, attachExternalSource, deletePlayableItem, removeSource, streamallId } from "@/domain/library";
 import { PlayerOrchestrator, type PlayerSnapshot } from "@/domain/player";
 import { generateRandomQueue } from "@/domain/random";
 import { resolveSources } from "@/domain/providers";
@@ -51,7 +50,6 @@ function downloadJson(value: unknown, filename: string) {
 }
 
 export function StreamallApp() {
-  const router = useRouter();
   const [library, setLibrary] = useState<LibrarySnapshot>();
   const libraryLoaded = library !== undefined;
   const libraryRef = useRef<LibrarySnapshot | undefined>(undefined);
@@ -281,7 +279,6 @@ export function StreamallApp() {
     if (!snapshot) return;
     const addition = addExternalResult(snapshot, result);
     mutateLibrary(() => addition.snapshot);
-    setSelectedId(addition.itemId);
     setNotice(`${result.title} ajouté à votre bibliothèque.`);
   }
 
@@ -326,6 +323,28 @@ export function StreamallApp() {
     }));
   }
 
+  async function deleteSelected() {
+    const snapshot = libraryRef.current;
+    if (!selectedId || !snapshot) return;
+    const item = allPlayable(snapshot).find((candidate) => candidate.id === selectedId);
+    if (!item) return;
+    if (!window.confirm(`Supprimer « ${item.title} » de la bibliothèque ?\n\nLe titre et toutes ses Sources seront supprimés.`)) return;
+
+    if (playerRef.current.item?.id === selectedId) {
+      finishHistory("STOPPED");
+      await orchestratorRef.current?.stop();
+    }
+
+    queueRef.current = queueRef.current.filter((entry) => entry.itemId !== selectedId);
+    setQueue(queueRef.current);
+    pastRef.current = pastRef.current.filter((itemId) => itemId !== selectedId);
+    setPast(pastRef.current);
+
+    mutateLibrary((current) => deletePlayableItem(current, selectedId));
+    setSelectedId(undefined);
+    setNotice(`${item.title} supprimé de la bibliothèque.`);
+  }
+
   function playAlbum(albumId: string) {
     const snapshot = libraryRef.current;
     if (!snapshot) return;
@@ -368,6 +387,7 @@ export function StreamallApp() {
 
   const items = useMemo(() => (library ? allPlayable(library) : []), [library]);
   const selected = items.find((item) => item.id === selectedId);
+  const selectedSources = selected ? library.sources.filter((source) => source.playableItemId === selected.id) : [];
   const currentLabel = player.item && library ? itemLabel(player.item, library) : undefined;
 
   if (!library) {
@@ -400,7 +420,6 @@ export function StreamallApp() {
           <div className="nav-actions">
             <a href="/api/backup/export" download>Exporter JSON</a>
             <label className="file-action">Restaurer JSON<input type="file" accept="application/json" onChange={(event) => void importBackup(event)} /></label>
-            <button onClick={() => fetch("/api/auth/logout", { method: "POST" }).then(() => { router.push("/login"); router.refresh(); })}>Se déconnecter</button>
           </div>
         </aside>
 
@@ -482,8 +501,8 @@ export function StreamallApp() {
         <fieldset><legend>Genres</legend>{library.genres.map((genre) => <label key={genre}><input type="checkbox" checked={selected.genres.includes(genre)} onChange={() => editSelected({ genres: selected.genres.includes(genre) ? selected.genres.filter((entry) => entry !== genre) : [...selected.genres, genre] })} />{genre}</label>)}</fieldset>
         <label>Energy<select value={selected.energy ?? ""} onChange={(event) => editSelected({ energy: event.target.value ? Number(event.target.value) : undefined })}><option value="">Non renseignée</option>{[1, 2, 3, 4, 5].map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
         <div className="feedback-actions"><button className={selected.favorite ? "active" : ""} onClick={() => editSelected({ favorite: !selected.favorite })}>♥ Favorite</button><button className={selected.frequencyPreference === "MORE" ? "active" : ""} onClick={() => editSelected({ frequencyPreference: "MORE" })}>+ Souvent</button><button className={selected.frequencyPreference === "LESS" ? "active" : ""} onClick={() => editSelected({ frequencyPreference: "LESS" })}>− Souvent</button><button className={selected.disabled ? "danger" : ""} onClick={() => editSelected({ disabled: !selected.disabled })}>{selected.disabled ? "Réactiver" : "Désactiver"}</button></div>
-        <div className="sources"><strong>Sources</strong>{library.sources.filter((source) => source.playableItemId === selected.id).map((source) => <div key={source.id}><span className={`provider ${source.provider}`}>{source.provider}</span><small>{source.healthStatus} · priorité {source.priority}</small><button onClick={() => mutateLibrary((snapshot) => removeSource(snapshot, source.id))}>Retirer</button></div>)}{!library.sources.some((source) => source.playableItemId === selected.id) ? <p>Aucune Source. L’élément reste dans la bibliothèque.</p> : null}</div>
-        <button className="close-editor" onClick={() => setSelectedId(undefined)}>Fermer</button>
+        <div className="sources"><strong>Sources</strong>{selectedSources.map((source) => <div key={source.id}><span className={`provider ${source.provider}`}>{source.provider}</span><small>{source.healthStatus} · priorité {source.priority}</small>{selectedSources.length > 1 ? <button onClick={() => mutateLibrary((snapshot) => removeSource(snapshot, source.id))}>Retirer</button> : null}</div>)}{!selectedSources.length ? <p>Aucune Source. L’élément reste dans la bibliothèque.</p> : null}</div>
+        <div className="editor-footer-actions"><button className="delete-item danger" onClick={() => void deleteSelected()}>Supprimer le titre</button><button className="close-editor" onClick={() => setSelectedId(undefined)}>Fermer</button></div>
       </section> : null}
     </main>
   );
