@@ -28,6 +28,8 @@ export const albumSchema = entityBase.extend({
   artistIds: z.array(z.string()),
   artwork: z.url().optional(),
   year: z.number().int().optional(),
+  favorite: z.boolean().optional(),
+  genres: z.array(z.string().min(1)).optional(),
 });
 export const trackSchema = playableBase.extend({
   kind: z.literal("track"),
