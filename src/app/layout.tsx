@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import "./ui-refresh.css";
 import "./interaction-refresh.css";
+import "./search-preview.css";
 
 export const metadata: Metadata = {
   title: "Streamall",
