@@ -387,7 +387,7 @@ export function StreamallApp() {
 
   const items = useMemo(() => (library ? allPlayable(library) : []), [library]);
   const selected = items.find((item) => item.id === selectedId);
-  const selectedSources = selected ? library.sources.filter((source) => source.playableItemId === selected.id) : [];
+  const selectedSources = selected && library ? library.sources.filter((source) => source.playableItemId === selected.id) : [];
   const currentLabel = player.item && library ? itemLabel(player.item, library) : undefined;
 
   if (!library) {
