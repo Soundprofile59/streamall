@@ -1,8 +1,10 @@
 import type { CatalogArtist, CatalogReleaseDetail, CatalogReleaseGroup, CatalogTrack } from "@/domain/catalog";
 
 const API_ROOT = "https://musicbrainz.org/ws/2/";
-const USER_AGENT = "Streamall/0.5 (https://github.com/Soundprofile59/streamall)";
+const USER_AGENT = "Streamall/0.7 (https://github.com/Soundprofile59/streamall)";
 const MIN_INTERVAL_MS = 1_050;
+const MAX_ATTEMPTS = 3;
+const RETRYABLE_STATUSES = new Set([429, 502, 503, 504]);
 
 type CacheEntry = { expiresAt: number; value: unknown };
 const cache = new Map<string, CacheEntry>();
@@ -14,6 +16,18 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+async function waitForPacing() {
+  const wait = Math.max(0, MIN_INTERVAL_MS - (Date.now() - lastRequestStartedAt));
+  if (wait) await sleep(wait);
+  lastRequestStartedAt = Date.now();
+}
+
+function retryDelay(response: Response, attempt: number) {
+  const retryAfter = Number(response.headers.get("retry-after"));
+  if (Number.isFinite(retryAfter) && retryAfter > 0) return Math.max(MIN_INTERVAL_MS, retryAfter * 1_000);
+  return Math.max(MIN_INTERVAL_MS, 1_250 * (attempt + 1));
+}
+
 async function pacedFetchJson<T>(url: string): Promise<T> {
   const previous = requestTail;
   let release!: () => void;
@@ -21,20 +35,30 @@ async function pacedFetchJson<T>(url: string): Promise<T> {
   await previous;
 
   try {
-    const wait = Math.max(0, MIN_INTERVAL_MS - (Date.now() - lastRequestStartedAt));
-    if (wait) await sleep(wait);
-    lastRequestStartedAt = Date.now();
+    let lastError: unknown;
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
+      await waitForPacing();
+      try {
+        const response = await fetch(url, {
+          cache: "no-store",
+          signal: AbortSignal.timeout(9_000),
+          headers: {
+            Accept: "application/json",
+            "User-Agent": USER_AGENT,
+          },
+        });
+        if (response.ok) return response.json() as Promise<T>;
 
-    const response = await fetch(url, {
-      cache: "no-store",
-      signal: AbortSignal.timeout(9_000),
-      headers: {
-        Accept: "application/json",
-        "User-Agent": USER_AGENT,
-      },
-    });
-    if (!response.ok) throw new Error(`MusicBrainz returned ${response.status}`);
-    return response.json() as Promise<T>;
+        lastError = new Error(`MusicBrainz returned ${response.status}`);
+        if (!RETRYABLE_STATUSES.has(response.status) || attempt === MAX_ATTEMPTS - 1) throw lastError;
+        await sleep(retryDelay(response, attempt));
+      } catch (error) {
+        lastError = error;
+        if (attempt === MAX_ATTEMPTS - 1) throw error;
+        await sleep(Math.max(MIN_INTERVAL_MS, 1_250 * (attempt + 1)));
+      }
+    }
+    throw lastError instanceof Error ? lastError : new Error("MusicBrainz indisponible");
   } finally {
     release();
   }
