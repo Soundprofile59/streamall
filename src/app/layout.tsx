@@ -15,7 +15,7 @@ import "./v07-search.css";
 import "./v07-library.css";
 import "./build-badge.css";
 
-const APP_VERSION = "0.7.1";
+const APP_VERSION = "0.7.2";
 
 export const metadata: Metadata = {
   title: "Streamall",
