@@ -9,9 +9,10 @@ import "./catalog-browser.css";
 import "./catalog-import.css";
 import "./collection-view.css";
 import "./album-info.css";
+import "./v05-controls.css";
 import "./build-badge.css";
 
-const APP_VERSION = "0.4.0";
+const APP_VERSION = "0.5.0";
 
 export const metadata: Metadata = {
   title: "Streamall",
