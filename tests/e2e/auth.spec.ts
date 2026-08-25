@@ -1,14 +1,16 @@
 import { expect, test } from "@playwright/test";
 import { libraryFixture } from "../../src/test/fixtures";
 
-test("unauthorized routes and library are protected", async ({ page, request }) => {
+test("prototype opens without a login gate", async ({ page, request }) => {
   const api = await request.get("/api/library");
-  expect(api.status()).toBe(401);
+  expect(api.status()).toBe(200);
   await page.goto("/");
-  await expect(page).toHaveURL(/\/login/);
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByText("STREAMALL")).toBeVisible();
+  await expect(page.getByRole("button", { name: /RANDOM/ })).toBeVisible();
 });
 
-test("owner can sign in and open the private library", async ({ page }) => {
+test("library remains usable without authentication", async ({ page }) => {
   const fixture = libraryFixture(1);
   await page.route("**/api/library", async (route) => {
     if (route.request().method() === "GET") {
@@ -18,11 +20,7 @@ test("owner can sign in and open the private library", async ({ page }) => {
     const body = route.request().postDataJSON() as { snapshot: typeof fixture };
     await route.fulfill({ json: body.snapshot });
   });
-  await page.goto("/login");
-  const password = page.getByLabel("Mot de passe");
-  await expect(password).toBeEnabled();
-  await password.fill("e2e-password");
-  await page.getByRole("button", { name: "Entrer" }).click();
+  await page.goto("/");
   await expect(page.getByText("STREAMALL")).toBeVisible();
   await expect(page.getByRole("button", { name: /RANDOM/ })).toBeVisible();
   await page.getByRole("button", { name: /Track 0/ }).click();
