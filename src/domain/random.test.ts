@@ -61,10 +61,17 @@ describe("random engine", () => {
     expect(counts.get("track_2")!).toBeGreaterThan(counts.get("track_1")! * 2);
   });
 
-  it("fills a small-library queue without deadlocking", () => {
+  it("never repeats a title inside one generated queue", () => {
+    const result = generateRandomQueue(libraryFixture(12), {}, 123, 20);
+    const ids = result.entries.map((entry) => entry.itemId);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(result.entries).toHaveLength(12);
+  });
+
+  it("stops cleanly when a small library has no more unique playable titles", () => {
     const result = generateRandomQueue(libraryFixture(2), {}, 123, 20);
-    expect(result.entries).toHaveLength(20);
-    expect(result.diagnostics.every((diagnostic) => diagnostic.selectedId)).toBe(true);
+    expect(result.entries).toHaveLength(2);
+    expect(new Set(result.entries.map((entry) => entry.itemId)).size).toBe(2);
   });
 
   it("returns no candidate rather than violating a hard filter", () => {
