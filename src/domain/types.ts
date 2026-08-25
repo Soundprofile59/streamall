@@ -36,7 +36,9 @@ export interface Album extends EntityBase {
   artistIds: string[];
   artwork?: string;
   year?: number;
-  /** User-level album bookmark. Kept optional for backward compatibility with V1 snapshots. */
+  /** Personal preference: 1 = very rarely, 3 = neutral, 5 = very often. Undefined is neutral/unrated. */
+  rating?: number;
+  /** Legacy album bookmark kept for backward compatibility with early V1 snapshots. */
   favorite?: boolean;
   /** Canonical genre labels learned from metadata providers such as MusicBrainz. */
   genres?: string[];
