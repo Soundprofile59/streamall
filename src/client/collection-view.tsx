@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import type { Album, Artist, LibrarySnapshot, PlayableItem } from "@/domain/types";
 
 export type LibrarySection = "tracks" | "mixes" | "albums" | "artists" | "genres" | "moods";
@@ -71,10 +71,6 @@ function albumStats(album: Album, library: LibrarySnapshot) {
   return { tracks, playable };
 }
 
-function openArtistDiscography(artist: Artist) {
-  window.dispatchEvent(new CustomEvent("streamall:open-library-artist", { detail: { name: artist.name } }));
-}
-
 function replacePrimary(values: string[], value: string) {
   const tail = values.slice(1).filter((entry) => entry !== value);
   return value ? [value, ...tail] : tail;
@@ -118,10 +114,11 @@ function AlbumCard({ album, library, onOpen, onInspect, onPlay, onQueue }: {
   );
 }
 
-function AlbumDetail({ album, library, selectedId, onBack, onInspect, onQueue, onSelectItem, onPlayItem, onPlayAlbum }: {
+function AlbumDetail({ album, library, selectedId, backLabel, onBack, onInspect, onQueue, onSelectItem, onPlayItem, onPlayAlbum }: {
   album: Album;
   library: LibrarySnapshot;
   selectedId?: string;
+  backLabel?: string;
   onBack: () => void;
   onInspect: () => void;
   onQueue: () => void;
@@ -136,7 +133,7 @@ function AlbumDetail({ album, library, selectedId, onBack, onInspect, onQueue, o
   return (
     <div className="album-detail-view">
       <div className="album-detail-toolbar">
-        <button className="collection-back" type="button" onClick={onBack}>← Albums</button>
+        <button className="collection-back" type="button" onClick={onBack}>← {backLabel ?? "Albums"}</button>
         <button className="album-info-button" type="button" onClick={onInspect}>ⓘ Infos album</button>
       </div>
       <div className="album-detail-hero">
@@ -318,7 +315,12 @@ function TrackList({ items, library, selectedId, genreOptions, onSelectItem, onP
   );
 }
 
-function ArtistList({ artists, library, onToggle }: { artists: Artist[]; library: LibrarySnapshot; onToggle: (artistId: string) => void }) {
+function ArtistList({ artists, library, onToggle, onOpenArtist }: {
+  artists: Artist[];
+  library: LibrarySnapshot;
+  onToggle: (artistId: string) => void;
+  onOpenArtist: (artistId: string) => void;
+}) {
   const [showDisabled, setShowDisabled] = useState(false);
   const disabledCount = artists.filter((artist) => artist.disabled).length;
   const visibleArtists = [...artists]
@@ -335,7 +337,7 @@ function ArtistList({ artists, library, onToggle }: { artists: Artist[]; library
       const tracks = library.tracks.filter((track) => track.artistIds.includes(artist.id)).length;
       return <article key={artist.id} className={`artist-card ${artist.disabled ? "disabled" : ""}`}>
         <span className="artist-card-mark">◎</span>
-        <button className="artist-card-main" type="button" onClick={() => openArtistDiscography(artist)} title={`Ouvrir les albums de ${artist.name} déjà présents dans Streamall`}><strong>{artist.name}</strong><small>{albums} album{albums > 1 ? "s" : ""} · {tracks} titre{tracks > 1 ? "s" : ""}</small></button>
+        <button className="artist-card-main" type="button" onClick={() => onOpenArtist(artist.id)} title={`Ouvrir les albums de ${artist.name} déjà présents dans Streamall`}><strong>{artist.name}</strong><small>{albums} album{albums > 1 ? "s" : ""} · {tracks} titre{tracks > 1 ? "s" : ""}</small></button>
         <button className="artist-disable-button" type="button" onClick={() => onToggle(artist.id)}>{artist.disabled ? "Réactiver" : "Désactiver"}</button>
       </article>;
     })}</div>
@@ -345,9 +347,23 @@ function ArtistList({ artists, library, onToggle }: { artists: Artist[]; library
 
 export function CollectionView({ section, library, selectedId, onSelectItem, onPlayItem, onQueueItem, onEditItem, onPlayAlbum, onQueueAlbum, onToggleArtist, onRandomTag }: Props) {
   const [selectedAlbumId, setSelectedAlbumId] = useState<string>();
+  const [selectedArtistId, setSelectedArtistId] = useState<string>();
   const [inspectedAlbumId, setInspectedAlbumId] = useState<string>();
+
+  useEffect(() => {
+    setSelectedAlbumId(undefined);
+    setInspectedAlbumId(undefined);
+    if (section !== "artists") setSelectedArtistId(undefined);
+  }, [section]);
+
   const selectedAlbum = library.albums.find((album) => album.id === selectedAlbumId);
+  const selectedArtist = library.artists.find((artist) => artist.id === selectedArtistId);
   const inspectedAlbum = library.albums.find((album) => album.id === inspectedAlbumId);
+  const artistAlbums = useMemo(() => selectedArtist
+    ? library.albums
+        .filter((album) => album.artistIds.includes(selectedArtist.id))
+        .sort((a, b) => (a.year ?? 9999) - (b.year ?? 9999) || a.title.localeCompare(b.title, "fr", { sensitivity: "base" }))
+    : [], [library.albums, selectedArtist]);
   const looseTracks = useMemo(() => library.tracks.filter((track) => !track.albumId), [library.tracks]);
   const genreTags = useMemo(() => [...new Set([
     ...library.genres,
@@ -358,11 +374,12 @@ export function CollectionView({ section, library, selectedId, onSelectItem, onP
 
   const title = section === "albums" ? "Vos albums" : section === "tracks" ? "Tous les titres" : section === "mixes" ? "Vos mixes" : section === "artists" ? "Vos artistes" : section === "genres" ? "Genres" : "Ambiances";
 
-  const albumDetail = section === "albums" && selectedAlbum
+  const albumDetail = selectedAlbum && (section === "albums" || (section === "artists" && selectedArtist))
     ? <AlbumDetail
         album={selectedAlbum}
         library={library}
         selectedId={selectedId}
+        backLabel={section === "artists" && selectedArtist ? selectedArtist.name : "Albums"}
         onBack={() => setSelectedAlbumId(undefined)}
         onInspect={() => setInspectedAlbumId(selectedAlbum.id)}
         onQueue={() => onQueueAlbum(selectedAlbum.id)}
@@ -372,9 +389,25 @@ export function CollectionView({ section, library, selectedId, onSelectItem, onP
       />
     : null;
 
+  const artistDiscography = section === "artists" && selectedArtist && !selectedAlbum
+    ? <div className="collection-view section-artists artist-discography-inline">
+        <div className="section-heading collection-heading">
+          <div>
+            <button className="collection-back" type="button" onClick={() => setSelectedArtistId(undefined)}>← Artistes</button>
+            <p className="eyebrow">DISCOGRAPHIE STREAMALL</p>
+            <h2>{selectedArtist.name}</h2>
+          </div>
+          <span className="collection-summary">{artistAlbums.length} album{artistAlbums.length > 1 ? "s" : ""}</span>
+        </div>
+        {artistAlbums.length
+          ? <div className="album-mosaic">{artistAlbums.map((album) => <AlbumCard key={album.id} album={album} library={library} onOpen={() => setSelectedAlbumId(album.id)} onInspect={() => setInspectedAlbumId(album.id)} onPlay={() => onPlayAlbum(album.id)} onQueue={() => onQueueAlbum(album.id)} />)}</div>
+          : <div className="empty-state"><p>Aucun album de cet artiste dans Streamall.</p><span>Seuls les albums déjà ajoutés à votre bibliothèque apparaissent ici.</span></div>}
+      </div>
+    : null;
+
   return (
     <>
-      {albumDetail ?? <div className={`collection-view section-${section}`}>
+      {albumDetail ?? artistDiscography ?? <div className={`collection-view section-${section}`}>
         <div className="section-heading collection-heading">
           <div><p className="eyebrow">{section.toUpperCase()}</p><h2>{title}</h2></div>
           {section === "albums" && looseTracks.length ? <span className="collection-summary">{looseTracks.length} titre{looseTracks.length > 1 ? "s" : ""} hors album</span> : null}
@@ -386,7 +419,7 @@ export function CollectionView({ section, library, selectedId, onSelectItem, onP
 
         {section === "tracks" ? (library.tracks.length ? <TrackList items={library.tracks} library={library} selectedId={selectedId} genreOptions={genreTags} onSelectItem={onSelectItem} onPlayItem={onPlayItem} onQueueItem={onQueueItem} onEditItem={onEditItem} /> : <div className="empty-state"><p>Votre collection est prête à être remplie.</p><span>Utilisez la recherche Catalogue.</span></div>) : null}
         {section === "mixes" ? (library.mixes.length ? <TrackList items={library.mixes} library={library} selectedId={selectedId} genreOptions={genreTags} onSelectItem={onSelectItem} onPlayItem={onPlayItem} onQueueItem={onQueueItem} onEditItem={onEditItem} /> : <div className="empty-state"><p>Aucun mix pour l’instant.</p></div>) : null}
-        {section === "artists" ? <ArtistList artists={library.artists} library={library} onToggle={onToggleArtist} /> : null}
+        {section === "artists" ? <ArtistList artists={library.artists} library={library} onToggle={onToggleArtist} onOpenArtist={(artistId) => { setSelectedArtistId(artistId); setSelectedAlbumId(undefined); }} /> : null}
         {section === "genres" ? (genreTags.length ? <div className="tag-card-grid">{genreTags.map((tag) => <button key={tag} className="tag-tile" type="button" onClick={() => onRandomTag("genres", tag)}><strong>{tag}</strong><span>Lancer Random</span></button>)}</div> : <div className="empty-state"><p>Aucun genre renseigné.</p><span>Les genres apparaissent automatiquement au fur et à mesure des albums ajoutés.</span></div>) : null}
         {section === "moods" ? <div className="tag-card-grid">{library.moods.map((tag) => <button key={tag} className="tag-tile" type="button" onClick={() => onRandomTag("moods", tag)}><strong>{tag}</strong><span>Lancer Random</span></button>)}</div> : null}
       </div>}
