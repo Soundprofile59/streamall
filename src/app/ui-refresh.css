@@ -1,0 +1,439 @@
+/* Streamall UI refresh 1 — compact desktop shell, no functional changes */
+
+body {
+  min-height: 100dvh;
+  background:
+    radial-gradient(circle at 50% -12%, rgba(187, 255, 74, .07), transparent 34%),
+    #07090b;
+}
+
+.app-shell {
+  width: min(1180px, 100%);
+  min-height: 100dvh;
+  margin: 0 auto;
+  padding: 10px;
+  grid-template-rows: 52px minmax(360px, 1fr) 218px;
+  gap: 8px;
+}
+
+.panel {
+  border-radius: 12px;
+  border-color: #242a31;
+  background: rgba(16, 19, 23, .96);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, .22);
+}
+
+.topbar {
+  min-height: 52px;
+  grid-template-columns: 170px minmax(280px, 1fr) 110px;
+  gap: 10px;
+  padding: 0 2px;
+}
+
+.brand {
+  gap: 9px;
+  font-size: 12px;
+  letter-spacing: .15em;
+}
+
+.brand-mark.small {
+  width: 30px;
+  height: 30px;
+  font-size: 15px;
+}
+
+.searchbar {
+  border-radius: 10px;
+  min-height: 40px;
+}
+
+.searchbar input {
+  padding: 9px 13px;
+  font-size: 13px;
+}
+
+.searchbar button {
+  padding: 0 14px;
+  font-size: 12px;
+}
+
+.save-indicator {
+  font-size: 9px;
+  letter-spacing: .1em;
+}
+
+.workspace {
+  grid-template-columns: 166px minmax(0, 1fr) 230px;
+  gap: 8px;
+}
+
+.library-nav {
+  padding: 14px 8px;
+}
+
+.eyebrow {
+  margin-bottom: 7px;
+  font-size: 8px;
+  letter-spacing: .14em;
+}
+
+.library-nav > .eyebrow {
+  padding: 0 9px;
+}
+
+.library-nav > button {
+  min-height: 37px;
+  border-radius: 8px;
+  padding: 0 9px;
+  font-size: 12px;
+}
+
+.library-nav > button.active {
+  box-shadow: inset 2px 0 var(--acid);
+}
+
+.library-nav > button span {
+  font-size: 10px;
+}
+
+.nav-actions {
+  padding: 9px 6px 0;
+  gap: 1px;
+}
+
+.nav-actions a,
+.nav-actions button,
+.file-action {
+  padding: 6px 3px;
+  font-size: 10px;
+}
+
+.content-panel {
+  padding: 15px 17px;
+}
+
+.section-heading {
+  margin-bottom: 11px;
+}
+
+.section-heading h2 {
+  font-size: 18px;
+}
+
+.section-heading.compact h2 {
+  font-size: 15px;
+}
+
+.text-button {
+  font-size: 11px;
+}
+
+.library-list,
+.result-grid {
+  gap: 3px;
+}
+
+.library-row {
+  min-height: 46px;
+  grid-template-columns: 24px minmax(130px, 1fr) auto;
+  gap: 6px;
+  padding: 5px 8px;
+  border-radius: 8px;
+}
+
+.library-row strong {
+  font-size: 11px;
+}
+
+.library-row small {
+  font-size: 9px;
+}
+
+.row-play,
+.row-tags {
+  font-size: 9px;
+}
+
+.library-row > button,
+.result-card button,
+.sources button {
+  border-radius: 7px;
+  padding: 6px 9px;
+  font-size: 10px;
+}
+
+.tag-tile {
+  min-height: 52px;
+  padding: 11px;
+  border-radius: 9px;
+  font-size: 11px;
+}
+
+.empty-state {
+  min-height: 180px;
+  font-size: 11px;
+}
+
+.queue-panel {
+  padding: 14px 10px;
+}
+
+.queue-row {
+  grid-template-columns: 18px minmax(0, 1fr) 23px;
+  gap: 3px;
+  padding: 6px 2px;
+}
+
+.queue-row strong {
+  font-size: 10px;
+}
+
+.queue-row small,
+.queue-row > span,
+.empty-queue {
+  font-size: 8px;
+}
+
+.provider-statuses {
+  gap: 4px;
+  margin: -4px 0 10px;
+}
+
+.provider {
+  padding: 2px 6px;
+  font-size: 7px;
+}
+
+.result-card {
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  gap: 8px;
+  padding: 6px;
+  border-radius: 9px;
+  background: #12161a;
+}
+
+.small-art {
+  width: 44px;
+  height: 44px;
+  border-radius: 6px;
+}
+
+.small-art span {
+  font-size: 15px;
+}
+
+.result-card h3 {
+  margin: 3px 0 1px;
+  font-size: 11px;
+}
+
+.result-card p {
+  font-size: 9px;
+}
+
+.result-actions {
+  gap: 3px;
+}
+
+.now-playing {
+  min-height: 218px;
+  grid-template-columns: 218px minmax(0, 1fr) 205px;
+  border-radius: 12px;
+}
+
+.media-surface {
+  min-height: 218px;
+}
+
+.youtube-surface,
+.mixcloud-surface {
+  min-width: 200px;
+  min-height: 200px;
+}
+
+.player-details {
+  padding: 17px 24px;
+}
+
+.player-details h1 {
+  margin-bottom: 3px;
+  font-size: clamp(19px, 2.3vw, 30px);
+}
+
+.player-details > p:not(.eyebrow):not(.player-error) {
+  margin-bottom: 10px;
+  font-size: 11px;
+}
+
+.native-audio {
+  height: 30px;
+  margin: 5px 0;
+}
+
+.time {
+  margin-top: 3px;
+  font-size: 8px;
+}
+
+.transport {
+  gap: 8px;
+  margin-top: 3px;
+}
+
+.transport button {
+  width: 34px;
+  height: 34px;
+  font-size: 15px;
+}
+
+.transport .play-button {
+  width: 46px;
+  height: 46px;
+  font-size: 18px;
+}
+
+.random-panel {
+  padding: 16px;
+  gap: 7px;
+}
+
+.random-button {
+  min-height: 45px;
+  border-radius: 9px;
+  font-size: 14px;
+}
+
+.random-panel label,
+.editor-drawer > label {
+  grid-template-columns: 42px 1fr;
+  gap: 5px;
+  font-size: 9px;
+}
+
+select {
+  padding: 6px;
+  border-radius: 7px;
+  font-size: 10px;
+}
+
+.notice {
+  min-height: 20px;
+  font-size: 8px;
+}
+
+.editor-drawer {
+  inset: 66px max(12px, calc((100vw - 1180px) / 2 + 12px)) 12px auto;
+  width: min(440px, calc(100vw - 24px));
+  padding: 20px;
+  border-radius: 12px;
+  box-shadow: -18px 0 60px rgba(0, 0, 0, .55);
+}
+
+.editor-drawer h2 {
+  font-size: 19px;
+}
+
+.editor-drawer fieldset {
+  margin: 11px 0;
+  padding: 9px;
+  gap: 5px;
+  border-radius: 9px;
+}
+
+.editor-drawer fieldset label {
+  padding: 5px 8px;
+  font-size: 9px;
+}
+
+.feedback-actions {
+  margin: 12px 0;
+  gap: 4px;
+}
+
+.feedback-actions button,
+.close-editor {
+  padding: 7px 9px;
+  font-size: 10px;
+}
+
+.sources {
+  margin-top: 13px;
+  padding-top: 11px;
+  gap: 5px;
+  font-size: 10px;
+}
+
+.close-editor {
+  margin-top: 13px;
+}
+
+@media (min-width: 1181px) and (min-height: 760px) {
+  body {
+    display: grid;
+    place-items: center;
+    padding: 12px;
+  }
+
+  .app-shell {
+    min-height: min(880px, calc(100dvh - 24px));
+    height: min(880px, calc(100dvh - 24px));
+    border: 1px solid #20262d;
+    border-radius: 15px;
+    background: rgba(7, 9, 11, .86);
+    box-shadow: 0 28px 90px rgba(0, 0, 0, .42);
+    overflow: hidden;
+  }
+}
+
+@media (max-width: 1050px) {
+  .app-shell {
+    width: 100%;
+  }
+
+  .workspace {
+    grid-template-columns: 150px minmax(0, 1fr);
+  }
+
+  .now-playing {
+    grid-template-columns: 210px minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 700px) {
+  body {
+    display: block;
+    padding: 0;
+  }
+
+  .app-shell {
+    min-height: 100dvh;
+    height: auto;
+    padding: 7px;
+  }
+
+  .content-panel {
+    max-height: 50vh;
+  }
+
+  .now-playing {
+    min-height: 0;
+  }
+
+  .media-surface {
+    min-height: 210px;
+  }
+
+  .player-details {
+    padding: 16px 14px;
+  }
+
+  .random-panel {
+    padding: 14px;
+  }
+
+  .editor-drawer {
+    inset: 7px;
+    width: auto;
+    padding: 17px 13px;
+  }
+}
