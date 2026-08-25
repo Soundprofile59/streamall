@@ -191,10 +191,14 @@ export function StreamallApp() {
 
   const playItem = useCallback(async (itemId: string, rememberCurrent = true) => {
     const snapshot = libraryRef.current;
-    const orchestrator = orchestratorRef.current;
-    if (!snapshot || !orchestrator) return;
+    if (!snapshot) return;
     const item = allPlayable(snapshot).find((candidate) => candidate.id === itemId);
     if (!item) return;
+
+    setSelectedId(itemId);
+
+    const orchestrator = orchestratorRef.current;
+    if (!orchestrator) return;
 
     const currentId = playerRef.current.item?.id;
     const currentIsLibraryItem = Boolean(currentId && allPlayable(snapshot).some((candidate) => candidate.id === currentId));
@@ -234,7 +238,6 @@ export function StreamallApp() {
         },
       ],
     }));
-    setSelectedId(itemId);
     await orchestrator.load(item, sources, true);
   }, [mutateLibrary]);
 
