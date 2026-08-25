@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
-import { addExternalResult, allPlayable, attachExternalSource, deletePlayableItem, removeSource, streamallId } from "@/domain/library";
+import { addExternalResult, allPlayable, deletePlayableItem, streamallId } from "@/domain/library";
 import { PlayerOrchestrator, type PlayerSnapshot } from "@/domain/player";
 import { generateRandomQueue } from "@/domain/random";
 import { resolveSources } from "@/domain/providers";
@@ -214,9 +214,9 @@ export function StreamallApp() {
   }, [mutateLibrary]);
 
   const playItem = useCallback(async (itemId: string, rememberCurrent = true) => {
-    const snapshot = libraryRef.current;
+    let snapshot = libraryRef.current;
     if (!snapshot) return;
-    const item = allPlayable(snapshot).find((candidate) => candidate.id === itemId);
+    let item = allPlayable(snapshot).find((candidate) => candidate.id === itemId);
     if (!item) return;
 
     const orchestrator = orchestratorRef.current;
@@ -234,11 +234,28 @@ export function StreamallApp() {
     }
     if (currentHistoryId.current && currentId && currentId !== itemId) finishHistory("STOPPED");
 
-    const sources = snapshot.sources.filter((source) => source.playableItemId === itemId);
-    if (!sources.length) {
-      setNotice("Cet élément n’a pas encore de Source. Son identité Streamall est conservée.");
+    let sources = snapshot.sources.filter((source) => source.playableItemId === itemId && source.userEnabled);
+    if (!sources.length && item.kind === "track" && item.albumId) {
+      setNotice(`Préparation de ${item.title}…`);
+      try {
+        await fetch("/api/albums/resolve-sources", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ albumId: item.albumId }),
+        });
+        snapshot = await reloadLibrary();
+        item = allPlayable(snapshot).find((candidate) => candidate.id === itemId);
+        sources = snapshot.sources.filter((source) => source.playableItemId === itemId && source.userEnabled);
+      } catch {
+        // La résolution de source reste volontairement interne et silencieuse.
+      }
+    }
+
+    if (!item || !sources.length) {
+      setNotice("Lecture indisponible pour le moment. Streamall réessaiera automatiquement plus tard.");
       return;
     }
+
     const ordered = resolveSources(sources, playbackContext());
     const historyId = streamallId("history");
     currentHistoryId.current = historyId;
@@ -263,7 +280,7 @@ export function StreamallApp() {
       ],
     }));
     await orchestrator.load(item, sources, true);
-  }, [finishHistory, mutateLibrary]);
+  }, [finishHistory, mutateLibrary, reloadLibrary]);
 
   const playNext = useCallback(async (finish = true) => {
     if (finish && playerRef.current.item && !previewRef.current) {
@@ -368,36 +385,16 @@ export function StreamallApp() {
 
     const now = new Date().toISOString();
     const item = {
-      id: streamallId(result.kind),
-      revision: 0,
-      createdAt: now,
-      updatedAt: now,
-      kind: result.kind,
-      title: result.title,
-      artistIds: [],
-      duration: result.duration,
-      artwork: result.artwork,
-      genres: [],
-      moods: [],
-      favorite: false,
-      frequencyPreference: "NORMAL" as const,
-      disabled: false,
+      id: streamallId(result.kind), revision: 0, createdAt: now, updatedAt: now, kind: result.kind,
+      title: result.title, artistIds: [], duration: result.duration, artwork: result.artwork,
+      genres: [], moods: [], favorite: false, frequencyPreference: "NORMAL" as const, disabled: false,
     } as PlayableItem;
     const source: Source = {
-      id: streamallId("source"),
-      revision: 0,
-      createdAt: now,
-      updatedAt: now,
-      playableItemId: item.id,
-      provider: result.provider,
-      providerId: result.externalId,
-      url: result.url,
-      priority: Math.max(0, snapshot.settings.providerPriority.indexOf(result.provider)),
-      userEnabled: true,
-      healthStatus: "UNKNOWN",
-      providerMetadata: { ...result.providerMetadata, streamallPreview: true },
-      metadataFetchedAt: now,
-      consecutiveFailures: 0,
+      id: streamallId("source"), revision: 0, createdAt: now, updatedAt: now,
+      playableItemId: item.id, provider: result.provider, providerId: result.externalId, url: result.url,
+      priority: Math.max(0, snapshot.settings.providerPriority.indexOf(result.provider)), userEnabled: true,
+      healthStatus: "UNKNOWN", providerMetadata: { ...result.providerMetadata, streamallPreview: true },
+      metadataFetchedAt: now, consecutiveFailures: 0,
     };
 
     previewRef.current = result;
@@ -430,7 +427,7 @@ export function StreamallApp() {
     const [first, ...rest] = generated.entries;
     queueRef.current = rest;
     setQueue(rest);
-    setNotice(`Queue générée · seed ${seed}`);
+    setNotice(`Queue générée · ${rest.length + (first ? 1 : 0)} titre${rest.length ? "s" : ""} sans doublon`);
     if (playerRef.current.item && !previewRef.current) finishHistory("STOPPED");
     if (first) await playItem(first.itemId);
   }
@@ -451,13 +448,17 @@ export function StreamallApp() {
     await playItem(previousId, false);
   }
 
-  function editSelected(patch: EditablePatch) {
-    if (!selectedId) return;
+  function editItem(itemId: string, patch: EditablePatch) {
     mutateLibrary((snapshot) => ({
       ...snapshot,
-      tracks: snapshot.tracks.map((item) => item.id === selectedId ? { ...item, ...patch, revision: item.revision + 1, updatedAt: new Date().toISOString() } : item),
-      mixes: snapshot.mixes.map((item) => item.id === selectedId ? { ...item, ...patch, revision: item.revision + 1, updatedAt: new Date().toISOString() } : item),
+      tracks: snapshot.tracks.map((item) => item.id === itemId ? { ...item, ...patch, revision: item.revision + 1, updatedAt: new Date().toISOString() } : item),
+      mixes: snapshot.mixes.map((item) => item.id === itemId ? { ...item, ...patch, revision: item.revision + 1, updatedAt: new Date().toISOString() } : item),
     }));
+  }
+
+  function editSelected(patch: EditablePatch) {
+    if (!selectedId) return;
+    editItem(selectedId, patch);
   }
 
   async function deleteSelected() {
@@ -465,7 +466,7 @@ export function StreamallApp() {
     if (!selectedId || !snapshot) return;
     const item = allPlayable(snapshot).find((candidate) => candidate.id === selectedId);
     if (!item) return;
-    if (!window.confirm(`Supprimer « ${item.title} » de la bibliothèque ?\n\nLe titre et toutes ses Sources seront supprimés.`)) return;
+    if (!window.confirm(`Supprimer « ${item.title} » de la bibliothèque ?`)) return;
 
     if (playerRef.current.item?.id === selectedId) {
       finishHistory("STOPPED");
@@ -489,24 +490,16 @@ export function StreamallApp() {
     let playable = albumPlayableTracks(snapshot, albumId);
     if (albumTracks.length > 0 && playable.length === albumTracks.length) return playable;
 
-    const album = snapshot.albums.find((candidate) => candidate.id === albumId);
-    setNotice(`Recherche automatique des sources manquantes${album ? ` pour ${album.title}` : ""}…`);
     try {
-      const response = await fetch("/api/albums/resolve-sources", {
+      await fetch("/api/albums/resolve-sources", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ albumId }),
       });
-      const body = (await response.json().catch(() => null)) as { addedSources?: number; matchedTracks?: number; message?: string; error?: string } | null;
-      if (!response.ok) throw new Error(body?.message ?? body?.error ?? "Recherche de sources impossible");
       snapshot = await reloadLibrary();
       playable = albumPlayableTracks(snapshot, albumId);
-      if (!playable.length) setNotice("Aucune source suffisamment sûre n’a encore été trouvée pour cet album.");
-      else if (playable.length < albumTracks.length) setNotice(`${playable.length}/${albumTracks.length} pistes ont une source jouable pour le moment.`);
-      else setNotice(`${playable.length} piste${playable.length > 1 ? "s" : ""} prête${playable.length > 1 ? "s" : ""} à être lue${playable.length > 1 ? "s" : ""}.`);
       return playable;
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Recherche de sources impossible");
+    } catch {
       return playable;
     }
   }
@@ -515,18 +508,23 @@ export function StreamallApp() {
     const playable = await ensureAlbumPlayable(albumId);
     const entries = playable.map((item) => ({ id: streamallId("queue"), itemId: item.id, generatedAt: new Date().toISOString(), reason: "ALBUM" as const }));
     const [first, ...rest] = entries;
-    if (!first) return;
-    const existingQueue = queueRef.current;
-    queueRef.current = [...rest, ...existingQueue];
+    if (!first) {
+      setNotice("Aucune piste de cet album n’est lisible pour le moment.");
+      return;
+    }
+    queueRef.current = [...rest, ...queueRef.current];
     setQueue(queueRef.current);
     const album = libraryRef.current?.albums.find((candidate) => candidate.id === albumId);
-    setNotice(`${album?.title ?? "Album"} lancé · ${rest.length} piste${rest.length > 1 ? "s" : ""} prioritaire${rest.length > 1 ? "s" : ""} dans À suivre.`);
+    setNotice(`${album?.title ?? "Album"} lancé · ${rest.length} piste${rest.length > 1 ? "s" : ""} prioritaire${rest.length > 1 ? "s" : ""}.`);
     await playItem(first.itemId);
   }
 
   async function queueAlbum(albumId: string) {
     const playable = await ensureAlbumPlayable(albumId);
-    if (!playable.length) return;
+    if (!playable.length) {
+      setNotice("Aucune piste de cet album n’est lisible pour le moment.");
+      return;
+    }
     const additions = playable.map((item) => ({ id: streamallId("queue"), itemId: item.id, generatedAt: new Date().toISOString(), reason: "ALBUM" as const }));
     queueRef.current = [...queueRef.current, ...additions];
     setQueue(queueRef.current);
@@ -534,13 +532,43 @@ export function StreamallApp() {
     setNotice(`${album?.title ?? "Album"} ajouté à la fin de la file · ${additions.length} piste${additions.length > 1 ? "s" : ""}.`);
   }
 
+  async function queueItem(itemId: string) {
+    let snapshot = libraryRef.current;
+    if (!snapshot) return;
+    let item = allPlayable(snapshot).find((candidate) => candidate.id === itemId);
+    if (!item) return;
+
+    let playable = snapshot.sources.some((source) => source.playableItemId === itemId && source.userEnabled);
+    if (!playable && item.kind === "track" && item.albumId) {
+      try {
+        await fetch("/api/albums/resolve-sources", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ albumId: item.albumId }),
+        });
+        snapshot = await reloadLibrary();
+        item = allPlayable(snapshot).find((candidate) => candidate.id === itemId);
+        playable = snapshot.sources.some((source) => source.playableItemId === itemId && source.userEnabled);
+      } catch {
+        playable = false;
+      }
+    }
+
+    if (!item || !playable) {
+      setNotice("Ce titre n’est pas lisible pour le moment.");
+      return;
+    }
+
+    const entry: QueueEntry = { id: streamallId("queue"), itemId, generatedAt: new Date().toISOString(), reason: "MANUAL" };
+    queueRef.current = [...queueRef.current, entry];
+    setQueue(queueRef.current);
+    setNotice(`${item.title} ajouté à la fin de la file.`);
+  }
+
   function changeVolume(value: number) {
     const volume = Math.max(0, Math.min(1, value));
     void orchestratorRef.current?.setVolume(volume);
-    mutateLibrary((snapshot) => ({
-      ...snapshot,
-      settings: { ...snapshot.settings, volume },
-    }));
+    mutateLibrary((snapshot) => ({ ...snapshot, settings: { ...snapshot.settings, volume } }));
   }
 
   async function importBackup(event: ChangeEvent<HTMLInputElement>) {
@@ -582,7 +610,6 @@ export function StreamallApp() {
   ])].sort((a, b) => a.localeCompare(b, "fr", { sensitivity: "base" })) : [], [library]);
   const selected = items.find((item) => item.id === selectedId);
   const selectedRating = selected ? effectiveRating(selected) : undefined;
-  const selectedSources = selected && library ? library.sources.filter((source) => source.playableItemId === selected.id) : [];
   const currentLabel = previewResult
     ? { title: previewResult.title, artist: previewResult.artistName }
     : player.item && library
@@ -637,7 +664,6 @@ export function StreamallApp() {
                     <div className="result-actions">
                       <button className={`preview-button ${isPreviewing ? "active" : ""}`} onClick={() => void previewExternal(result)}>{isPreviewing && player.state === "PLAYING" ? "Ⅱ Pause" : isPreviewing ? "▶ Reprendre" : "▶ Écouter"}</button>
                       <button disabled={isAdded} onClick={() => addResult(result)}>{isAdded ? "✓ Ajouté" : "+ Ajouter"}</button>
-                      {selected ? <button title={`Associer à ${selected.title}`} onClick={() => { mutateLibrary((snapshot) => attachExternalSource(snapshot, selected.id, result)); setNotice(`Source ${result.provider} associée à ${selected.title}.`); }}>Associer</button> : null}
                     </div>
                   </article>
                 );
@@ -650,6 +676,8 @@ export function StreamallApp() {
               selectedId={selectedId}
               onSelectItem={setSelectedId}
               onPlayItem={(itemId) => void playItem(itemId)}
+              onQueueItem={(itemId) => void queueItem(itemId)}
+              onEditItem={editItem}
               onPlayAlbum={(albumId) => void playAlbum(albumId)}
               onQueueAlbum={(albumId) => void queueAlbum(albumId)}
               onToggleArtist={(artistId) => mutateLibrary((snapshot) => ({
@@ -722,7 +750,6 @@ export function StreamallApp() {
           </div>
         </div>
         <div className="rating-hard-action"><button className={selected.disabled ? "danger" : ""} onClick={() => editSelected({ disabled: !selected.disabled })}>{selected.disabled ? "Réintégrer au Random" : "Exclure du Random"}</button></div>
-        <div className="sources"><strong>Sources</strong>{selectedSources.map((source) => <div key={source.id}><span className={`provider ${source.provider}`}>{source.provider}</span><small>{source.healthStatus} · priorité {source.priority}</small>{selectedSources.length > 1 ? <button onClick={() => mutateLibrary((snapshot) => removeSource(snapshot, source.id))}>Retirer</button> : null}</div>)}{!selectedSources.length ? <p>Aucune Source. L’élément reste dans la bibliothèque.</p> : null}</div>
         <div className="editor-footer-actions"><button className="delete-item danger" onClick={() => void deleteSelected()}>Supprimer le titre</button><button className="close-editor" onClick={() => setSelectedId(undefined)}>Fermer</button></div>
       </section> : null}
     </main>
