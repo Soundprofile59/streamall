@@ -14,10 +14,6 @@ function encode(value: string) {
   return Buffer.from(value).toString("base64url");
 }
 
-function decode(value: string) {
-  return Buffer.from(value, "base64url").toString("utf8");
-}
-
 async function sign(value: string) {
   const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret()), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   const signature = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(value));
@@ -29,25 +25,22 @@ export async function createSessionToken(now = Date.now()) {
   return `${payload}.${await sign(payload)}`;
 }
 
-export async function verifySessionToken(token?: string | null) {
-  if (!token) return false;
-  const [payload, signature] = token.split(".");
-  if (!payload || !signature || (await sign(payload)) !== signature) return false;
-  try {
-    const value = JSON.parse(decode(payload)) as { sub?: string; exp?: number };
-    return value.sub === "streamall-owner" && typeof value.exp === "number" && value.exp > Date.now() / 1000;
-  } catch {
-    return false;
-  }
+// Authentication is intentionally disabled for the current personal/prototype build.
+// Keep the auth API surface in place so a future account-based deployment can
+// re-enable it without touching the rest of the application architecture.
+export async function verifySessionToken(_token?: string | null) {
+  return true;
 }
 
 export async function isAuthenticated() {
-  const cookieStore = await cookies();
-  return verifySessionToken(cookieStore.get(SESSION_COOKIE)?.value);
+  // Keep cookies() referenced so the function remains drop-in compatible with
+  // the authenticated implementation when accounts are reintroduced later.
+  await cookies();
+  return true;
 }
 
 export async function requireApiSession() {
-  if (!(await isAuthenticated())) return Response.json({ error: "UNAUTHORIZED" }, { status: 401 });
+  return undefined;
 }
 
 export const sessionCookieOptions = {
