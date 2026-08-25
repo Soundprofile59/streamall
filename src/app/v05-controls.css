@@ -28,7 +28,6 @@
 .album-tile-copy { padding-right: 2px !important; }
 .album-hover-info { padding-bottom: 42px; }
 
-.album-favorite-button,
 .album-info-shortcut,
 .album-queue-shortcut,
 .album-quick-play {
@@ -47,17 +46,12 @@
   font-size: 10px;
 }
 
-.album-favorite-button:hover,
 .album-info-shortcut:hover,
 .album-queue-shortcut:hover,
-.album-quick-play:hover,
-.album-favorite-button.active {
+.album-quick-play:hover {
   border-color: #647b40;
   color: #c8ff67;
 }
-
-.album-favorite-button.active { background: #1c2814; }
-.album-tile.favorite .album-cover { border-color: #52683a; }
 
 .album-detail-toolbar {
   display: flex;
@@ -66,7 +60,6 @@
 }
 
 .album-info-button,
-.album-favorite-detail,
 .album-queue-button,
 .album-resolve-button {
   border: 1px solid #343d43;
@@ -79,8 +72,6 @@
   font-size: 8px;
 }
 
-.album-favorite-detail.active,
-.album-favorite-detail:hover,
 .album-info-button:hover,
 .album-queue-button:hover,
 .album-resolve-button:hover {
@@ -118,7 +109,7 @@
 
 .album-info-primary-actions {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 6px;
   margin: 10px 0;
 }
@@ -134,10 +125,13 @@
   font-size: 8px;
 }
 
-.album-info-primary-actions button:hover,
-.album-info-primary-actions button.active {
+.album-info-primary-actions button:hover {
   border-color: #647b40;
   color: #c8ff67;
+}
+
+.album-rating-row {
+  margin-top: 0;
 }
 
 .artist-list-toolbar {
