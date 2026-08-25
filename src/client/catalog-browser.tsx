@@ -125,21 +125,41 @@ export function CatalogBrowser() {
         body: JSON.stringify({ artist: selectedArtist, release: selectedRelease }),
       });
       const body = (await response.json().catch(() => null)) as {
+        albumId?: string;
         addedTracks?: number;
         existingTracks?: number;
         albumCreated?: boolean;
         message?: string;
         error?: string;
       } | null;
-      if (!response.ok || !body) throw new Error(body?.message ?? body?.error ?? "Import impossible");
+      if (!response.ok || !body?.albumId) throw new Error(body?.message ?? body?.error ?? "Import impossible");
 
-      if ((body.addedTracks ?? 0) === 0 && !body.albumCreated) {
-        setImportStatus(`✓ Album déjà présent · ${body.existingTracks ?? selectedRelease.tracks.length} pistes reconnues`);
-      } else {
-        setImportStatus(`✓ Album ajouté · ${body.addedTracks ?? 0} piste${(body.addedTracks ?? 0) > 1 ? "s" : ""} créée${(body.addedTracks ?? 0) > 1 ? "s" : ""}`);
-        window.history.replaceState(null, "", "/?section=albums");
-        window.setTimeout(() => window.location.reload(), 900);
+      const imported = (body.addedTracks ?? 0) > 0 || Boolean(body.albumCreated);
+      setImportStatus(imported ? "Album ajouté · recherche automatique des sources…" : "Album déjà présent · recherche des sources manquantes…");
+
+      let sourceSummary = "aucune source ajoutée";
+      try {
+        const resolveResponse = await fetch("/api/albums/resolve-sources", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ albumId: body.albumId }),
+        });
+        const resolveBody = (await resolveResponse.json().catch(() => null)) as { addedSources?: number; matchedTracks?: number; message?: string; error?: string } | null;
+        if (resolveResponse.ok && resolveBody) {
+          sourceSummary = `${resolveBody.matchedTracks ?? 0} piste${(resolveBody.matchedTracks ?? 0) > 1 ? "s" : ""} reliée${(resolveBody.matchedTracks ?? 0) > 1 ? "s" : ""} · ${resolveBody.addedSources ?? 0} source${(resolveBody.addedSources ?? 0) > 1 ? "s" : ""}`;
+        } else {
+          sourceSummary = "sources à compléter manuellement";
+        }
+      } catch {
+        sourceSummary = "sources à compléter manuellement";
       }
+
+      const trackSummary = imported
+        ? `${body.addedTracks ?? 0} piste${(body.addedTracks ?? 0) > 1 ? "s" : ""} créée${(body.addedTracks ?? 0) > 1 ? "s" : ""}`
+        : `${body.existingTracks ?? selectedRelease.tracks.length} pistes reconnues`;
+      setImportStatus(`✓ ${imported ? "Album ajouté" : "Album déjà présent"} · ${trackSummary} · ${sourceSummary}`);
+      window.history.replaceState(null, "", "/?section=albums");
+      window.setTimeout(() => window.location.reload(), 1300);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Import impossible");
     } finally {
@@ -187,9 +207,9 @@ export function CatalogBrowser() {
                       <span>{selectedRelease.tracks.length} piste{selectedRelease.tracks.length > 1 ? "s" : ""}</span>
                       <div className="catalog-release-actions">
                         <button className="catalog-import-button" type="button" disabled={importing} onClick={() => void importAlbum()}>
-                          {importing ? "Ajout…" : "+ Ajouter l’album complet"}
+                          {importing ? "Ajout & sources…" : "+ Ajouter l’album complet"}
                         </button>
-                        <small>Crée l’album et toutes ses pistes dans Streamall. Les sources de lecture peuvent être résolues ensuite.</small>
+                        <small>Crée l’album et sa tracklist puis tente une première résolution automatique des sources de lecture.</small>
                       </div>
                       {importStatus ? <div className="catalog-import-status">{importStatus}</div> : null}
                     </div>
@@ -235,7 +255,7 @@ export function CatalogBrowser() {
           </div>
 
           <footer className="catalog-footer">
-            <span>MusicBrainz fournit la structure canonique. « Ajouter l’album complet » crée les pistes même sans source ; « Sources » cherche ensuite une lecture disponible.</span>
+            <span>MusicBrainz fournit la structure canonique. Streamall tente ensuite de relier automatiquement les pistes aux sources YouTube, Audius et Jamendo ; les correspondances incertaines restent volontairement sans source.</span>
           </footer>
         </section>
       </div> : null}
