@@ -18,10 +18,6 @@ export function LibraryArtistBrowser() {
 
   useEffect(() => {
     const onArtist = (event: Event) => {
-      // The historical event name used to open MusicBrainz. It now means
-      // "open this artist from my Streamall library". Capture first so the
-      // old catalogue listener does not also open a second window.
-      event.stopImmediatePropagation();
       const name = (event as ArtistEvent).detail?.name?.trim();
       if (!name) return;
 
@@ -45,8 +41,8 @@ export function LibraryArtistBrowser() {
         .finally(() => setLoading(false));
     };
 
-    window.addEventListener("streamall:open-catalog-artist", onArtist, true);
-    return () => window.removeEventListener("streamall:open-catalog-artist", onArtist, true);
+    window.addEventListener("streamall:open-library-artist", onArtist);
+    return () => window.removeEventListener("streamall:open-library-artist", onArtist);
   }, []);
 
   useEffect(() => {
@@ -110,7 +106,7 @@ export function LibraryArtistBrowser() {
         ) : null}
 
         <footer className="library-artist-footer">
-          <span>Ici, uniquement les albums déjà ajoutés à votre bibliothèque — aucune recherche externe.</span>
+          <span>Uniquement les albums déjà ajoutés à votre bibliothèque.</span>
           <button type="button" onClick={goToAlbums}>Voir la bibliothèque Albums</button>
         </footer>
       </section>
