@@ -4,6 +4,7 @@ import type { Album, LibrarySnapshot } from "./types";
 export type AlbumMetadataPatch = {
   title?: string;
   year?: number;
+  rating?: number | null;
 };
 
 export function updateAlbumMetadata(snapshot: LibrarySnapshot, albumId: string, patch: AlbumMetadataPatch): LibrarySnapshot {
@@ -18,6 +19,7 @@ export function updateAlbumMetadata(snapshot: LibrarySnapshot, albumId: string, 
           ...candidate,
           ...(title ? { title } : {}),
           ...(patch.year !== undefined ? { year: patch.year } : {}),
+          ...(patch.rating !== undefined ? { rating: patch.rating ?? undefined, favorite: false } : {}),
           revision: candidate.revision + 1,
           updatedAt: now,
         }
