@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type FormEvent } from "react";
 import type { Album, Artist, LibrarySnapshot, PlayableItem, Track } from "@/domain/types";
 
 export type LibrarySection = "tracks" | "mixes" | "albums" | "artists" | "genres" | "moods";
@@ -46,7 +46,8 @@ function albumStats(album: Album, library: LibrarySnapshot) {
     .filter((track) => track.albumId === album.id)
     .sort((a, b) => (a.trackNumber ?? 999) - (b.trackNumber ?? 999));
   const playable = tracks.filter((track) => sourceCount(track.id, library) > 0).length;
-  return { tracks, playable };
+  const sources = tracks.reduce((total, track) => total + sourceCount(track.id, library), 0);
+  return { tracks, playable, sources };
 }
 
 function searchSources(track: Track, library: LibrarySnapshot) {
@@ -60,7 +61,13 @@ function searchSources(track: Track, library: LibrarySnapshot) {
   input.focus();
 }
 
-function AlbumCard({ album, library, onOpen, onPlay }: { album: Album; library: LibrarySnapshot; onOpen: () => void; onPlay: () => void }) {
+function AlbumCard({ album, library, onOpen, onInspect, onPlay }: {
+  album: Album;
+  library: LibrarySnapshot;
+  onOpen: () => void;
+  onInspect: () => void;
+  onPlay: () => void;
+}) {
   const { tracks, playable } = albumStats(album, library);
   const artists = artistLabel(album.artistIds, library);
   return (
@@ -71,7 +78,7 @@ function AlbumCard({ album, library, onOpen, onPlay }: { album: Album; library: 
           <span className="album-hover-info">
             <strong>{tracks.length} piste{tracks.length > 1 ? "s" : ""}</strong>
             <small>{playable ? `${playable} avec source` : "Sources à trouver"}</small>
-            <span>Ouvrir</span>
+            <span>Ouvrir l’album</span>
           </span>
         </span>
       </button>
@@ -79,38 +86,50 @@ function AlbumCard({ album, library, onOpen, onPlay }: { album: Album; library: 
         <button type="button" className="album-title-button" onClick={onOpen}><strong>{album.title}</strong></button>
         <small>{artists}{album.year ? ` · ${album.year}` : ""}</small>
       </div>
+      <button className="album-info-shortcut" type="button" onClick={onInspect} title="Informations de l’album" aria-label={`Informations de ${album.title}`}>ⓘ</button>
       <button className="album-quick-play" type="button" disabled={!playable} onClick={onPlay} title={playable ? "Lire les pistes disponibles" : "Aucune source de lecture disponible"}>▶</button>
     </article>
   );
 }
 
-function AlbumDetail({ album, library, selectedId, onBack, onSelectItem, onPlayItem, onPlayAlbum }: {
+function AlbumDetail({ album, library, selectedId, resolving, resolveStatus, onBack, onInspect, onResolve, onSelectItem, onPlayItem, onPlayAlbum }: {
   album: Album;
   library: LibrarySnapshot;
   selectedId?: string;
+  resolving: boolean;
+  resolveStatus?: string;
   onBack: () => void;
+  onInspect: () => void;
+  onResolve: () => void;
   onSelectItem: (itemId: string) => void;
   onPlayItem: (itemId: string) => void;
   onPlayAlbum: (albumId: string) => void;
 }) {
-  const { tracks, playable } = albumStats(album, library);
+  const { tracks, playable, sources } = albumStats(album, library);
   const artists = artistLabel(album.artistIds, library);
   return (
     <div className="album-detail-view">
-      <button className="collection-back" type="button" onClick={onBack}>← Albums</button>
+      <div className="album-detail-toolbar">
+        <button className="collection-back" type="button" onClick={onBack}>← Albums</button>
+        <button className="album-info-button" type="button" onClick={onInspect}>ⓘ Infos album</button>
+      </div>
       <div className="album-detail-hero">
-        <div className="album-detail-cover" style={album.artwork ? { backgroundImage: `url("${album.artwork}")` } : undefined}>{!album.artwork ? "S" : null}</div>
+        <button className="album-detail-cover album-detail-cover-button" type="button" onClick={onInspect} style={album.artwork ? { backgroundImage: `url("${album.artwork}")` } : undefined}>{!album.artwork ? "S" : null}</button>
         <div className="album-detail-copy">
           <p className="eyebrow">ALBUM</p>
-          <h2>{album.title}</h2>
+          <button className="album-detail-title-button" type="button" onClick={onInspect}><h2>{album.title}</h2></button>
           <p>{artists}{album.year ? ` · ${album.year}` : ""}</p>
-          <div className="album-detail-stats"><span>{tracks.length} piste{tracks.length > 1 ? "s" : ""}</span><span>{playable}/{tracks.length} avec source</span></div>
-          <button className="album-play-all" type="button" disabled={!playable} onClick={() => onPlayAlbum(album.id)}>▶ Lire les pistes disponibles</button>
+          <div className="album-detail-stats"><span>{tracks.length} piste{tracks.length > 1 ? "s" : ""}</span><span>{playable}/{tracks.length} avec source</span><span>{sources} source{sources > 1 ? "s" : ""}</span></div>
+          <div className="album-detail-actions">
+            <button className="album-play-all" type="button" disabled={!playable} onClick={() => onPlayAlbum(album.id)}>▶ Lire les pistes disponibles</button>
+            <button className="album-resolve-button" type="button" disabled={resolving} onClick={onResolve}>{resolving ? "Recherche…" : "⟳ Rechercher les sources"}</button>
+          </div>
+          {resolveStatus ? <p className="album-resolve-status">{resolveStatus}</p> : null}
         </div>
       </div>
       <div className="album-library-tracklist">
         {tracks.map((track) => {
-          const sources = sourceCount(track.id, library);
+          const sourcesForTrack = sourceCount(track.id, library);
           const stars = rating(track);
           return (
             <div key={track.id} className={`album-library-track ${selectedId === track.id ? "selected" : ""}`}>
@@ -120,12 +139,101 @@ function AlbumDetail({ album, library, selectedId, onBack, onSelectItem, onPlayI
                 <small>{artistLabel(track.artistIds, library)}{stars ? ` · ${"★".repeat(stars)}` : ""}</small>
               </button>
               <span className="album-track-duration">{duration(track.duration)}</span>
-              <span className={`album-source-state ${sources ? "ready" : "missing"}`}>{sources ? `${sources} source${sources > 1 ? "s" : ""}` : "Sans source"}</span>
-              {sources ? <button className="album-track-action" type="button" onClick={() => onPlayItem(track.id)}>▶</button> : <button className="album-track-action find" type="button" onClick={() => searchSources(track, library)}>Trouver</button>}
+              <span className={`album-source-state ${sourcesForTrack ? "ready" : "missing"}`}>{sourcesForTrack ? `${sourcesForTrack} source${sourcesForTrack > 1 ? "s" : ""}` : "Sans source"}</span>
+              {sourcesForTrack ? <button className="album-track-action" type="button" onClick={() => onPlayItem(track.id)}>▶</button> : <button className="album-track-action find" type="button" onClick={() => searchSources(track, library)}>Trouver</button>}
             </div>
           );
         })}
       </div>
+    </div>
+  );
+}
+
+function AlbumInfoPanel({ album, library, resolving, resolveStatus, onClose, onResolve }: {
+  album: Album;
+  library: LibrarySnapshot;
+  resolving: boolean;
+  resolveStatus?: string;
+  onClose: () => void;
+  onResolve: () => void;
+}) {
+  const [title, setTitle] = useState(album.title);
+  const [year, setYear] = useState(album.year ? String(album.year) : "");
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState<string>();
+  const { tracks, playable, sources } = albumStats(album, library);
+  const artists = artistLabel(album.artistIds, library);
+
+  async function save(event: FormEvent) {
+    event.preventDefault();
+    if (!title.trim() || busy) return;
+    setBusy(true);
+    setStatus(undefined);
+    try {
+      const response = await fetch("/api/albums", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ albumId: album.id, title: title.trim(), ...(year ? { year: Number(year) } : {}) }),
+      });
+      const body = (await response.json().catch(() => null)) as { message?: string; error?: string } | null;
+      if (!response.ok) throw new Error(body?.message ?? body?.error ?? "Modification impossible");
+      setStatus("✓ Informations enregistrées");
+      window.setTimeout(() => window.location.reload(), 650);
+    } catch (caught) {
+      setStatus(caught instanceof Error ? caught.message : "Modification impossible");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removeAlbum() {
+    if (busy) return;
+    if (!window.confirm(`Supprimer l’album « ${album.title} » ?\n\n${tracks.length} piste${tracks.length > 1 ? "s" : ""}, leurs sources et leur historique seront supprimés de Streamall.`)) return;
+    setBusy(true);
+    setStatus("Suppression…");
+    try {
+      const response = await fetch("/api/albums", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ albumId: album.id }),
+      });
+      const body = (await response.json().catch(() => null)) as { message?: string; error?: string } | null;
+      if (!response.ok) throw new Error(body?.message ?? body?.error ?? "Suppression impossible");
+      window.history.replaceState(null, "", "/?section=albums");
+      window.location.reload();
+    } catch (caught) {
+      setStatus(caught instanceof Error ? caught.message : "Suppression impossible");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="album-info-backdrop" onMouseDown={onClose}>
+      <aside className="album-info-drawer panel" role="dialog" aria-modal="true" aria-label={`Informations de l’album ${album.title}`} onMouseDown={(event) => event.stopPropagation()}>
+        <div className="album-info-header">
+          <div><p className="eyebrow">MÉTADONNÉES ALBUM</p><h2>{album.title}</h2><p>{artists}</p></div>
+          <button type="button" onClick={onClose} aria-label="Fermer">×</button>
+        </div>
+        <div className="album-info-cover" style={album.artwork ? { backgroundImage: `url("${album.artwork}")` } : undefined}>{!album.artwork ? "S" : null}</div>
+        <div className="album-info-stats"><span><strong>{tracks.length}</strong> pistes</span><span><strong>{playable}</strong> jouables</span><span><strong>{sources}</strong> sources</span></div>
+        <form className="album-info-form" onSubmit={(event) => void save(event)}>
+          <label>Titre<input value={title} onChange={(event) => setTitle(event.target.value)} maxLength={400} /></label>
+          <label>Année<input type="number" min="1000" max="3000" value={year} onChange={(event) => setYear(event.target.value)} placeholder="Non renseignée" /></label>
+          <button className="album-save-button" type="submit" disabled={busy || !title.trim()}>{busy ? "Enregistrement…" : "Enregistrer"}</button>
+        </form>
+        <div className="album-info-source-block">
+          <strong>Sources de lecture</strong>
+          <p>Streamall relie les pistes aux plateformes sans modifier l’identité canonique de l’album.</p>
+          <button type="button" disabled={resolving || busy} onClick={onResolve}>{resolving ? "Recherche en cours…" : "⟳ Rechercher les sources manquantes"}</button>
+          {resolveStatus ? <small>{resolveStatus}</small> : null}
+        </div>
+        {status ? <p className="album-info-status">{status}</p> : null}
+        <div className="album-info-danger">
+          <strong>Supprimer de la bibliothèque</strong>
+          <p>Supprime l’album, ses pistes, leurs sources et l’historique associé.</p>
+          <button type="button" disabled={busy} onClick={() => void removeAlbum()}>Supprimer l’album</button>
+        </div>
+      </aside>
     </div>
   );
 }
@@ -163,30 +271,82 @@ function ArtistList({ artists, library, onToggle }: { artists: Artist[]; library
 
 export function CollectionView({ section, library, selectedId, onSelectItem, onPlayItem, onPlayAlbum, onToggleArtist, onRandomTag }: Props) {
   const [selectedAlbumId, setSelectedAlbumId] = useState<string>();
+  const [inspectedAlbumId, setInspectedAlbumId] = useState<string>();
+  const [resolvingAlbumId, setResolvingAlbumId] = useState<string>();
+  const [resolveStatus, setResolveStatus] = useState<string>();
   const selectedAlbum = library.albums.find((album) => album.id === selectedAlbumId);
+  const inspectedAlbum = library.albums.find((album) => album.id === inspectedAlbumId);
   const looseTracks = useMemo(() => library.tracks.filter((track) => !track.albumId), [library.tracks]);
+
+  async function resolveAlbum(albumId: string) {
+    if (resolvingAlbumId) return;
+    setResolvingAlbumId(albumId);
+    setResolveStatus("Recherche sur YouTube, Audius et Jamendo…");
+    try {
+      const response = await fetch("/api/albums/resolve-sources", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ albumId }),
+      });
+      const body = (await response.json().catch(() => null)) as { addedSources?: number; matchedTracks?: number; searchedCandidates?: number; message?: string; error?: string } | null;
+      if (!response.ok || !body) throw new Error(body?.message ?? body?.error ?? "Recherche impossible");
+      const message = body.addedSources
+        ? `✓ ${body.matchedTracks ?? 0} piste${(body.matchedTracks ?? 0) > 1 ? "s" : ""} reliée${(body.matchedTracks ?? 0) > 1 ? "s" : ""} · ${body.addedSources} nouvelle${body.addedSources > 1 ? "s" : ""} source${body.addedSources > 1 ? "s" : ""}`
+        : `Aucune correspondance suffisamment sûre parmi ${body.searchedCandidates ?? 0} résultats.`;
+      setResolveStatus(message);
+      if (body.addedSources) window.setTimeout(() => window.location.reload(), 900);
+    } catch (caught) {
+      setResolveStatus(caught instanceof Error ? caught.message : "Recherche impossible");
+    } finally {
+      setResolvingAlbumId(undefined);
+    }
+  }
 
   const title = section === "albums" ? "Vos albums" : section === "tracks" ? "Tous les titres" : section === "mixes" ? "Vos mixes" : section === "artists" ? "Vos artistes" : section === "genres" ? "Genres" : "Ambiances";
 
-  if (section === "albums" && selectedAlbum) {
-    return <AlbumDetail album={selectedAlbum} library={library} selectedId={selectedId} onBack={() => setSelectedAlbumId(undefined)} onSelectItem={onSelectItem} onPlayItem={onPlayItem} onPlayAlbum={onPlayAlbum} />;
-  }
+  const albumDetail = section === "albums" && selectedAlbum
+    ? <AlbumDetail
+        album={selectedAlbum}
+        library={library}
+        selectedId={selectedId}
+        resolving={resolvingAlbumId === selectedAlbum.id}
+        resolveStatus={resolveStatus}
+        onBack={() => { setSelectedAlbumId(undefined); setResolveStatus(undefined); }}
+        onInspect={() => setInspectedAlbumId(selectedAlbum.id)}
+        onResolve={() => void resolveAlbum(selectedAlbum.id)}
+        onSelectItem={onSelectItem}
+        onPlayItem={onPlayItem}
+        onPlayAlbum={onPlayAlbum}
+      />
+    : null;
 
   return (
-    <div className={`collection-view section-${section}`}>
-      <div className="section-heading collection-heading">
-        <div><p className="eyebrow">{section.toUpperCase()}</p><h2>{title}</h2></div>
-        {section === "albums" && looseTracks.length ? <span className="collection-summary">{looseTracks.length} titre{looseTracks.length > 1 ? "s" : ""} hors album</span> : null}
-      </div>
+    <>
+      {albumDetail ?? <div className={`collection-view section-${section}`}>
+        <div className="section-heading collection-heading">
+          <div><p className="eyebrow">{section.toUpperCase()}</p><h2>{title}</h2></div>
+          {section === "albums" && looseTracks.length ? <span className="collection-summary">{looseTracks.length} titre{looseTracks.length > 1 ? "s" : ""} hors album</span> : null}
+        </div>
 
-      {section === "albums" ? (
-        library.albums.length ? <div className="album-mosaic">{library.albums.map((album) => <AlbumCard key={album.id} album={album} library={library} onOpen={() => setSelectedAlbumId(album.id)} onPlay={() => onPlayAlbum(album.id)} />)}</div> : <div className="empty-state"><p>Aucun album pour l’instant.</p><span>Ajoutez un album depuis le catalogue MusicBrainz.</span></div>
-      ) : null}
+        {section === "albums" ? (
+          library.albums.length ? <div className="album-mosaic">{library.albums.map((album) => <AlbumCard key={album.id} album={album} library={library} onOpen={() => { setSelectedAlbumId(album.id); setResolveStatus(undefined); }} onInspect={() => setInspectedAlbumId(album.id)} onPlay={() => onPlayAlbum(album.id)} />)}</div> : <div className="empty-state"><p>Aucun album pour l’instant.</p><span>Ajoutez un album depuis le catalogue MusicBrainz.</span></div>
+        ) : null}
 
-      {section === "tracks" ? (library.tracks.length ? <TrackList items={library.tracks} library={library} selectedId={selectedId} onSelectItem={onSelectItem} onPlayItem={onPlayItem} /> : <div className="empty-state"><p>Votre collection est prête à être remplie.</p><span>Utilisez la recherche ou le catalogue Albums / EP.</span></div>) : null}
-      {section === "mixes" ? (library.mixes.length ? <TrackList items={library.mixes} library={library} selectedId={selectedId} onSelectItem={onSelectItem} onPlayItem={onPlayItem} /> : <div className="empty-state"><p>Aucun mix pour l’instant.</p></div>) : null}
-      {section === "artists" ? <ArtistList artists={library.artists} library={library} onToggle={onToggleArtist} /> : null}
-      {(section === "genres" || section === "moods") ? <div className="tag-card-grid">{(section === "genres" ? library.genres : library.moods).map((tag) => <button key={tag} className="tag-tile" type="button" onClick={() => onRandomTag(section, tag)}><strong>{tag}</strong><span>Lancer Random</span></button>)}</div> : null}
-    </div>
+        {section === "tracks" ? (library.tracks.length ? <TrackList items={library.tracks} library={library} selectedId={selectedId} onSelectItem={onSelectItem} onPlayItem={onPlayItem} /> : <div className="empty-state"><p>Votre collection est prête à être remplie.</p><span>Utilisez la recherche ou le catalogue Albums / EP.</span></div>) : null}
+        {section === "mixes" ? (library.mixes.length ? <TrackList items={library.mixes} library={library} selectedId={selectedId} onSelectItem={onSelectItem} onPlayItem={onPlayItem} /> : <div className="empty-state"><p>Aucun mix pour l’instant.</p></div>) : null}
+        {section === "artists" ? <ArtistList artists={library.artists} library={library} onToggle={onToggleArtist} /> : null}
+        {(section === "genres" || section === "moods") ? <div className="tag-card-grid">{(section === "genres" ? library.genres : library.moods).map((tag) => <button key={tag} className="tag-tile" type="button" onClick={() => onRandomTag(section, tag)}><strong>{tag}</strong><span>Lancer Random</span></button>)}</div> : null}
+      </div>}
+
+      {inspectedAlbum ? <AlbumInfoPanel
+        key={inspectedAlbum.id}
+        album={inspectedAlbum}
+        library={library}
+        resolving={resolvingAlbumId === inspectedAlbum.id}
+        resolveStatus={resolveStatus}
+        onClose={() => setInspectedAlbumId(undefined)}
+        onResolve={() => void resolveAlbum(inspectedAlbum.id)}
+      /> : null}
+    </>
   );
 }
