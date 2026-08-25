@@ -23,7 +23,7 @@ type Section = LibrarySection;
 type ProviderStatus = { provider: Provider; status: string; message?: string };
 type EditablePatch = Partial<Pick<PlayableItem, "moods" | "genres" | "energy" | "rating" | "favorite" | "frequencyPreference" | "disabled">>;
 
-const SECTIONS: Section[] = ["tracks", "mixes", "albums", "artists", "genres", "moods"];
+const SECTIONS: Section[] = ["albums", "artists", "tracks", "mixes", "genres", "moods"];
 
 function playbackContext() {
   return {
@@ -79,6 +79,12 @@ function ratingMeaning(rating?: number) {
             : "Non noté · fréquence normale";
 }
 
+function albumPlayableTracks(snapshot: LibrarySnapshot, albumId: string) {
+  return snapshot.tracks
+    .filter((track) => track.albumId === albumId && snapshot.sources.some((source) => source.playableItemId === track.id && source.userEnabled))
+    .sort((a, b) => (a.trackNumber ?? 999) - (b.trackNumber ?? 999));
+}
+
 export function StreamallApp() {
   const [library, setLibrary] = useState<LibrarySnapshot>();
   const libraryLoaded = library !== undefined;
@@ -122,6 +128,7 @@ export function StreamallApp() {
         setLibrary(snapshot);
         const requested = new URLSearchParams(window.location.search).get("section");
         if (requested && SECTIONS.includes(requested as Section)) setSection(requested as Section);
+        else if (snapshot.albums.length) setSection("albums");
       })
       .catch((error: Error) => setNotice(error.message));
   }, []);
@@ -180,6 +187,18 @@ export function StreamallApp() {
     window.setTimeout(() => void drainSaves(), 650);
   }, [drainSaves]);
 
+  const reloadLibrary = useCallback(async () => {
+    const latest = await fetch("/api/library").then(async (response) => {
+      if (!response.ok) throw new Error("Bibliothèque indisponible");
+      return response.json() as Promise<LibrarySnapshot>;
+    });
+    libraryRef.current = latest;
+    persistedRevision.current = latest.revision;
+    pendingSave.current = undefined;
+    setLibrary(latest);
+    return latest;
+  }, []);
+
   const finishHistory = useCallback((outcome: HistoryOutcome) => {
     const historyId = currentHistoryId.current;
     if (!historyId) return;
@@ -200,8 +219,6 @@ export function StreamallApp() {
     const item = allPlayable(snapshot).find((candidate) => candidate.id === itemId);
     if (!item) return;
 
-    setSelectedId(itemId);
-
     const orchestrator = orchestratorRef.current;
     if (!orchestrator) return;
 
@@ -215,6 +232,8 @@ export function StreamallApp() {
       pastRef.current = [...pastRef.current, currentId].slice(-100);
       setPast(pastRef.current);
     }
+    if (currentHistoryId.current && currentId && currentId !== itemId) finishHistory("STOPPED");
+
     const sources = snapshot.sources.filter((source) => source.playableItemId === itemId);
     if (!sources.length) {
       setNotice("Cet élément n’a pas encore de Source. Son identité Streamall est conservée.");
@@ -244,7 +263,7 @@ export function StreamallApp() {
       ],
     }));
     await orchestrator.load(item, sources, true);
-  }, [mutateLibrary]);
+  }, [finishHistory, mutateLibrary]);
 
   const playNext = useCallback(async (finish = true) => {
     if (finish && playerRef.current.item && !previewRef.current) {
@@ -307,6 +326,7 @@ export function StreamallApp() {
       },
     });
     orchestratorRef.current = orchestrator;
+    void orchestrator.setVolume(libraryRef.current?.settings.volume ?? 0.8);
     const unsubscribe = orchestrator.subscribe((snapshot) => {
       playerRef.current = snapshot;
       setPlayer(snapshot);
@@ -462,21 +482,67 @@ export function StreamallApp() {
     setNotice(`${item.title} supprimé de la bibliothèque.`);
   }
 
-  function playAlbum(albumId: string) {
-    const snapshot = libraryRef.current;
-    if (!snapshot) return;
-    const items = snapshot.tracks
-      .filter((track) => track.albumId === albumId && snapshot.sources.some((source) => source.playableItemId === track.id && source.userEnabled))
-      .sort((a, b) => (a.trackNumber ?? 999) - (b.trackNumber ?? 999));
-    const entries = items.map((item) => ({ id: streamallId("queue"), itemId: item.id, generatedAt: new Date().toISOString(), reason: "ALBUM" as const }));
-    const [first, ...rest] = entries;
-    if (!first) {
-      setNotice("Cet album n’a encore aucune Source de lecture. Utilisez « Trouver » sur une piste.");
-      return;
+  async function ensureAlbumPlayable(albumId: string) {
+    let snapshot = libraryRef.current;
+    if (!snapshot) return [];
+    let playable = albumPlayableTracks(snapshot, albumId);
+    if (playable.length) return playable;
+
+    const album = snapshot.albums.find((candidate) => candidate.id === albumId);
+    setNotice(`Recherche automatique des sources${album ? ` pour ${album.title}` : ""}…`);
+    try {
+      const response = await fetch("/api/albums/resolve-sources", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ albumId }),
+      });
+      const body = (await response.json().catch(() => null)) as { addedSources?: number; matchedTracks?: number; message?: string; error?: string } | null;
+      if (!response.ok) throw new Error(body?.message ?? body?.error ?? "Recherche de sources impossible");
+      snapshot = await reloadLibrary();
+      playable = albumPlayableTracks(snapshot, albumId);
+      if (!playable.length) setNotice("Aucune source suffisamment sûre n’a encore été trouvée pour cet album.");
+      else setNotice(`${playable.length} piste${playable.length > 1 ? "s" : ""} prête${playable.length > 1 ? "s" : ""} à être lue${playable.length > 1 ? "s" : ""}.`);
+      return playable;
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Recherche de sources impossible");
+      return [];
     }
+  }
+
+  async function playAlbum(albumId: string) {
+    const playable = await ensureAlbumPlayable(albumId);
+    const entries = playable.map((item) => ({ id: streamallId("queue"), itemId: item.id, generatedAt: new Date().toISOString(), reason: "ALBUM" as const }));
+    const [first, ...rest] = entries;
+    if (!first) return;
     queueRef.current = rest;
     setQueue(rest);
-    void playItem(first.itemId);
+    await playItem(first.itemId);
+  }
+
+  async function queueAlbum(albumId: string) {
+    const playable = await ensureAlbumPlayable(albumId);
+    if (!playable.length) return;
+    const additions = playable.map((item) => ({ id: streamallId("queue"), itemId: item.id, generatedAt: new Date().toISOString(), reason: "ALBUM" as const }));
+    queueRef.current = [...queueRef.current, ...additions];
+    setQueue(queueRef.current);
+    const album = libraryRef.current?.albums.find((candidate) => candidate.id === albumId);
+    setNotice(`${album?.title ?? "Album"} ajouté à la file · ${additions.length} piste${additions.length > 1 ? "s" : ""}.`);
+  }
+
+  function toggleAlbumFavorite(albumId: string) {
+    mutateLibrary((snapshot) => ({
+      ...snapshot,
+      albums: snapshot.albums.map((album) => album.id === albumId ? { ...album, favorite: !album.favorite, revision: album.revision + 1, updatedAt: new Date().toISOString() } : album),
+    }));
+  }
+
+  function changeVolume(value: number) {
+    const volume = Math.max(0, Math.min(1, value));
+    void orchestratorRef.current?.setVolume(volume);
+    mutateLibrary((snapshot) => ({
+      ...snapshot,
+      settings: { ...snapshot.settings, volume },
+    }));
   }
 
   async function importBackup(event: ChangeEvent<HTMLInputElement>) {
@@ -502,6 +568,7 @@ export function StreamallApp() {
       libraryRef.current = body.snapshot;
       persistedRevision.current = body.snapshot.revision;
       setLibrary(body.snapshot);
+      void orchestratorRef.current?.setVolume(body.snapshot.settings.volume);
       setNotice("Bibliothèque restaurée avec succès.");
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Import impossible");
@@ -509,6 +576,12 @@ export function StreamallApp() {
   }
 
   const items = useMemo(() => (library ? allPlayable(library) : []), [library]);
+  const genreOptions = useMemo(() => library ? [...new Set([
+    ...library.genres,
+    ...library.albums.flatMap((album) => album.genres ?? []),
+    ...library.tracks.flatMap((track) => track.genres),
+    ...library.mixes.flatMap((mix) => mix.genres),
+  ])].sort((a, b) => a.localeCompare(b, "fr", { sensitivity: "base" })) : [], [library]);
   const selected = items.find((item) => item.id === selectedId);
   const selectedRating = selected ? effectiveRating(selected) : undefined;
   const selectedSources = selected && library ? library.sources.filter((source) => source.playableItemId === selected.id) : [];
@@ -521,6 +594,8 @@ export function StreamallApp() {
   if (!library) {
     return <main className="loading-shell"><div className="brand-mark">S</div><p>Chargement de la discothèque…</p><p className="muted">{notice}</p></main>;
   }
+
+  const activeArtistCount = library.artists.filter((artist) => !artist.disabled).length;
 
   return (
     <main className="app-shell">
@@ -540,7 +615,7 @@ export function StreamallApp() {
           {SECTIONS.map((entry) => (
             <button key={entry} className={section === entry ? "active" : ""} onClick={() => setSection(entry)}>
               {{ tracks: "Morceaux", mixes: "Mixes", albums: "Albums", artists: "Artistes", genres: "Genres", moods: "Moods" }[entry]}
-              <span>{entry === "tracks" ? library.tracks.length : entry === "mixes" ? library.mixes.length : entry === "albums" ? library.albums.length : entry === "artists" ? library.artists.length : entry === "genres" ? library.genres.length : library.moods.length}</span>
+              <span>{entry === "tracks" ? library.tracks.length : entry === "mixes" ? library.mixes.length : entry === "albums" ? library.albums.length : entry === "artists" ? activeArtistCount : entry === "genres" ? genreOptions.length : library.moods.length}</span>
             </button>
           ))}
           <div className="nav-actions">
@@ -577,7 +652,9 @@ export function StreamallApp() {
               selectedId={selectedId}
               onSelectItem={setSelectedId}
               onPlayItem={(itemId) => void playItem(itemId)}
-              onPlayAlbum={playAlbum}
+              onPlayAlbum={(albumId) => void playAlbum(albumId)}
+              onQueueAlbum={(albumId) => void queueAlbum(albumId)}
+              onToggleAlbumFavorite={toggleAlbumFavorite}
               onToggleArtist={(artistId) => mutateLibrary((snapshot) => ({
                 ...snapshot,
                 artists: snapshot.artists.map((entry) => entry.id === artistId ? { ...entry, disabled: !entry.disabled, revision: entry.revision + 1, updatedAt: new Date().toISOString() } : entry),
@@ -620,13 +697,18 @@ export function StreamallApp() {
             <button onClick={() => void previous()} disabled={Boolean(previewResult) || !past.length}>↶</button>
             <button className="play-button" onClick={() => player.state === "PLAYING" ? void orchestratorRef.current?.pause() : void orchestratorRef.current?.play()}>{player.state === "PLAYING" ? "Ⅱ" : "▶"}</button>
             <button onClick={() => void playNext()} disabled={Boolean(previewResult)}>↷</button>
+            <div className="persistent-volume" title={player.source?.provider === "mixcloud" ? "Le widget Mixcloud ne fournit pas de contrôle de volume à Streamall" : "Volume général conservé entre les titres"}>
+              <button type="button" aria-label={library.settings.volume > 0 ? "Couper le son" : "Rétablir le son"} onClick={() => changeVolume(library.settings.volume > 0 ? 0 : 0.8)}>{library.settings.volume > 0 ? "🔊" : "🔇"}</button>
+              <input aria-label="Volume général" type="range" min="0" max="100" step="1" value={Math.round(library.settings.volume * 100)} onChange={(event) => changeVolume(Number(event.target.value) / 100)} />
+              <span>{Math.round(library.settings.volume * 100)}%</span>
+            </div>
           </div>
         </div>
         <div className="random-panel">
           <p className="eyebrow">ÉCOUTE INTELLIGENTE</p>
           <button className="random-button" onClick={() => void startRandom()}><span>⤨</span> RANDOM</button>
           <label>Mood<select value={filters.moods?.[0] ?? ""} onChange={(event) => setFilters((current) => ({ ...current, moods: event.target.value ? [event.target.value] : undefined }))}><option value="">Tous</option>{library.moods.map((mood) => <option key={mood}>{mood}</option>)}</select></label>
-          <label>Genre<select value={filters.genres?.[0] ?? ""} onChange={(event) => setFilters((current) => ({ ...current, genres: event.target.value ? [event.target.value] : undefined }))}><option value="">Tous</option>{library.genres.map((genre) => <option key={genre}>{genre}</option>)}</select></label>
+          <label>Genre<select value={filters.genres?.[0] ?? ""} onChange={(event) => setFilters((current) => ({ ...current, genres: event.target.value ? [event.target.value] : undefined }))}><option value="">Tous</option>{genreOptions.map((genre) => <option key={genre}>{genre}</option>)}</select></label>
           <p className="notice">{notice}</p>
         </div>
       </section>
@@ -634,7 +716,7 @@ export function StreamallApp() {
       {selected ? <section className="editor-drawer panel">
         <div><p className="eyebrow">MÉTADONNÉES STREAMALL</p><h2>{selected.title}</h2><p>{itemLabel(selected, library).artist}</p></div>
         <fieldset><legend>Moods</legend>{library.moods.map((mood) => <label key={mood}><input type="checkbox" checked={selected.moods.includes(mood)} onChange={() => editSelected({ moods: selected.moods.includes(mood) ? selected.moods.filter((entry) => entry !== mood) : [...selected.moods, mood] })} />{mood}</label>)}</fieldset>
-        <fieldset><legend>Genres</legend>{library.genres.map((genre) => <label key={genre}><input type="checkbox" checked={selected.genres.includes(genre)} onChange={() => editSelected({ genres: selected.genres.includes(genre) ? selected.genres.filter((entry) => entry !== genre) : [...selected.genres, genre] })} />{genre}</label>)}</fieldset>
+        <fieldset><legend>Genres</legend>{genreOptions.map((genre) => <label key={genre}><input type="checkbox" checked={selected.genres.includes(genre)} onChange={() => editSelected({ genres: selected.genres.includes(genre) ? selected.genres.filter((entry) => entry !== genre) : [...selected.genres, genre] })} />{genre}</label>)}</fieldset>
         <label>Energy<select value={selected.energy ?? ""} onChange={(event) => editSelected({ energy: event.target.value ? Number(event.target.value) : undefined })}><option value="">Non renseignée</option>{[1, 2, 3, 4, 5].map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
         <div className="rating-row">
           <div><strong>Préférence personnelle</strong><small>{ratingMeaning(selectedRating)} · influe sur Random</small></div>
