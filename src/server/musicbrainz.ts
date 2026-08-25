@@ -1,7 +1,7 @@
 import type { CatalogArtist, CatalogReleaseDetail, CatalogReleaseGroup, CatalogTrack } from "@/domain/catalog";
 
 const API_ROOT = "https://musicbrainz.org/ws/2/";
-const USER_AGENT = "Streamall/0.2 (https://github.com/Soundprofile59/streamall)";
+const USER_AGENT = "Streamall/0.5 (https://github.com/Soundprofile59/streamall)";
 const MIN_INTERVAL_MS = 1_050;
 
 type CacheEntry = { expiresAt: number; value: unknown };
@@ -57,6 +57,15 @@ function coverArtForReleaseGroup(releaseGroupId: string) {
   return `https://coverartarchive.org/release-group/${encodeURIComponent(releaseGroupId)}/front-250`;
 }
 
+function genreNames(genres?: Array<{ name?: string; count?: number }>) {
+  return [...new Set(
+    (genres ?? [])
+      .filter((genre) => (genre.count ?? 0) >= 0)
+      .map((genre) => genre.name?.trim())
+      .filter((name): name is string => Boolean(name)),
+  )].sort((a, b) => a.localeCompare(b, "fr", { sensitivity: "base" }));
+}
+
 export async function searchCatalogArtists(query: string): Promise<CatalogArtist[]> {
   const normalized = query.trim();
   if (normalized.length < 2) return [];
@@ -94,7 +103,7 @@ export async function getArtistReleaseGroups(artistId: string): Promise<CatalogR
       artist: artistId,
       type: "album|ep",
       limit: "100",
-      inc: "artist-credits",
+      inc: "artist-credits+genres",
       fmt: "json",
     }).toString();
     const payload = await pacedFetchJson<{
@@ -105,6 +114,7 @@ export async function getArtistReleaseGroups(artistId: string): Promise<CatalogR
         "secondary-types"?: string[];
         "first-release-date"?: string;
         "artist-credit"?: Array<{ name?: string; joinphrase?: string; artist?: { name?: string } }>;
+        genres?: Array<{ name?: string; count?: number }>;
       }>;
     }>(url.toString());
 
@@ -117,6 +127,7 @@ export async function getArtistReleaseGroups(artistId: string): Promise<CatalogR
         firstReleaseDate: release["first-release-date"] || undefined,
         artistName: artistCreditName(release["artist-credit"]),
         artwork: coverArtForReleaseGroup(release.id),
+        genres: genreNames(release.genres),
       }))
       .sort((a, b) => (b.firstReleaseDate ?? "0000").localeCompare(a.firstReleaseDate ?? "0000"));
   });
@@ -189,6 +200,7 @@ export async function getReleaseGroupDetail(releaseGroupId: string): Promise<Cat
       country: release.country,
       status: release.status,
       artwork: coverArtForReleaseGroup(releaseGroupId),
+      genres: [],
       tracks: releaseTracks(release),
     };
   });
