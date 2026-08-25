@@ -16,6 +16,7 @@ const playableBase = entityBase.extend({
   genres: z.array(z.string().min(1)),
   moods: z.array(z.string().min(1)),
   energy: z.number().min(1).max(5).optional(),
+  rating: z.number().int().min(1).max(5).optional(),
   favorite: z.boolean(),
   frequencyPreference: z.enum(["LESS", "NORMAL", "MORE"]),
   disabled: z.boolean(),
