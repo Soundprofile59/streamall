@@ -46,6 +46,9 @@ export interface PlayableBase extends EntityBase {
   genres: string[];
   moods: string[];
   energy?: number;
+  /** Personal preference: 1 = very rarely, 3 = neutral, 5 = very often. Undefined is neutral/unrated. */
+  rating?: number;
+  /** Legacy V1 preference fields kept temporarily for backward-compatible imports. */
   favorite: boolean;
   frequencyPreference: FrequencyPreference;
   disabled: boolean;
