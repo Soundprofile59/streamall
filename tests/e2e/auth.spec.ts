@@ -24,7 +24,7 @@ test("library remains usable without authentication", async ({ page }) => {
   await expect(page.locator(".app-shell")).toBeVisible();
   await expect(page.getByRole("button", { name: /RANDOM/ })).toBeVisible();
   await page.getByRole("button", { name: /Track 0/ }).click();
-  await expect(page.getByRole("heading", { name: "Track 0", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Track 0", level: 2 })).toBeVisible();
   await page.getByRole("button", { name: "Fermer" }).click();
   await page.getByRole("button", { name: /RANDOM/ }).click();
   await expect(page.getByRole("heading", { name: "Track 0", level: 1 })).toBeVisible();
