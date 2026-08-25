@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
-type SearchMode = "catalog" | "sources";
+type SearchMode = "catalog" | "tracks";
 
 function setNativeValue(input: HTMLInputElement, value: string) {
   const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
@@ -30,7 +30,7 @@ export function SearchModeBridge() {
 
     input.placeholder = mode === "catalog"
       ? "Chercher un artiste, un album ou un EP…"
-      : "Chercher une source de lecture précise…";
+      : "Chercher un titre ou un mix…";
 
     const onSubmit = (event: SubmitEvent) => {
       if (mode !== "catalog") return;
@@ -39,8 +39,6 @@ export function SearchModeBridge() {
       event.stopImmediatePropagation();
       if (value.length < 2) return;
 
-      // Le navigateur MusicBrainz reste le moteur catalogue, mais il est
-      // désormais piloté par la recherche principale.
       document.querySelector<HTMLButtonElement>(".catalog-launcher")?.click();
       window.requestAnimationFrame(() => {
         window.requestAnimationFrame(() => {
@@ -61,7 +59,7 @@ export function SearchModeBridge() {
   return createPortal(
     <div className="search-mode-toggle" role="group" aria-label="Type de recherche">
       <button type="button" className={mode === "catalog" ? "active" : ""} onClick={() => setMode("catalog")} title="Artistes, albums et EP du catalogue">Catalogue</button>
-      <button type="button" className={mode === "sources" ? "active" : ""} onClick={() => setMode("sources")} title="Résultats YouTube, Audius, Jamendo et Mixcloud">Sources</button>
+      <button type="button" className={mode === "tracks" ? "active" : ""} onClick={() => setMode("tracks")} title="Chercher un titre ou un mix">Titres</button>
     </div>,
     host,
   );
