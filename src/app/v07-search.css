@@ -1,0 +1,60 @@
+.searchbar {
+  position: relative;
+  padding-left: 152px;
+}
+
+.search-mode-toggle {
+  position: absolute;
+  left: 5px;
+  top: 5px;
+  bottom: 5px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+  width: 142px;
+  padding: 2px;
+  border: 1px solid #2d343b;
+  border-radius: 8px;
+  background: #0c1014;
+  z-index: 3;
+}
+
+.search-mode-toggle button {
+  border: 0 !important;
+  border-radius: 5px !important;
+  background: transparent !important;
+  color: #7f8991 !important;
+  padding: 0 7px !important;
+  font: inherit;
+  font-size: 8px !important;
+  cursor: pointer;
+}
+
+.search-mode-toggle button.active {
+  background: #202923 !important;
+  color: #c9ff6a !important;
+}
+
+/* Le bouton historique reste dans le DOM pour le pont de recherche, mais n'est
+   plus exposé : le catalogue passe maintenant par la recherche principale. */
+.catalog-launcher {
+  position: fixed !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  overflow: hidden !important;
+}
+
+@media (max-width: 760px) {
+  .searchbar { padding-left: 5px; padding-top: 34px; }
+  .search-mode-toggle {
+    top: 3px;
+    left: 5px;
+    right: 5px;
+    bottom: auto;
+    width: auto;
+    height: 27px;
+  }
+}
