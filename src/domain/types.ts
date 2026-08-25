@@ -36,6 +36,10 @@ export interface Album extends EntityBase {
   artistIds: string[];
   artwork?: string;
   year?: number;
+  /** User-level album bookmark. Kept optional for backward compatibility with V1 snapshots. */
+  favorite?: boolean;
+  /** Canonical genre labels learned from metadata providers such as MusicBrainz. */
+  genres?: string[];
 }
 
 export interface PlayableBase extends EntityBase {
@@ -189,7 +193,7 @@ export function emptyLibrary(now = new Date().toISOString()): LibrarySnapshot {
     tracks: [],
     mixes: [],
     sources: [],
-    genres: ["Dub", "Reggae", "Hip-hop", "Trip-hop", "Drum'n'bass", "Electro", "Funk", "Soul", "Jazz", "Rock"],
+    genres: [],
     moods: ["Zen", "Cool", "Groovy", "Énergique"],
     history: [],
     settings: structuredClone(DEFAULT_SETTINGS),
