@@ -52,6 +52,46 @@ export function CatalogBrowser() {
     return () => window.removeEventListener("keydown", onKey);
   }, [open]);
 
+  useEffect(() => {
+    const onLibraryArtist = (event: Event) => {
+      const name = (event as CustomEvent<{ name?: string }>).detail?.name?.trim();
+      if (!name) return;
+
+      setOpen(true);
+      setQuery(name);
+      setLoading(true);
+      setError(undefined);
+      setImportStatus(undefined);
+      setSelectedRelease(undefined);
+      setReleases([]);
+
+      void (async () => {
+        try {
+          const artistBody = await catalogRequest(`/api/catalog?q=${encodeURIComponent(name)}`);
+          if (artistBody.mode !== "artists") return;
+          setArtists(artistBody.artists);
+          const exact = artistBody.artists.find((artist) => artist.name.localeCompare(name, undefined, { sensitivity: "base" }) === 0);
+          const artist = exact ?? artistBody.artists[0];
+          if (!artist) {
+            setSelectedArtist(undefined);
+            setError("Aucune discographie MusicBrainz trouvée pour cet artiste.");
+            return;
+          }
+          setSelectedArtist(artist);
+          const releaseBody = await catalogRequest(`/api/catalog?artistId=${encodeURIComponent(artist.id)}`);
+          if (releaseBody.mode === "releases") setReleases(releaseBody.releases);
+        } catch (caught) {
+          setError(caught instanceof Error ? caught.message : "Discographie indisponible");
+        } finally {
+          setLoading(false);
+        }
+      })();
+    };
+
+    window.addEventListener("streamall:open-catalog-artist", onLibraryArtist);
+    return () => window.removeEventListener("streamall:open-catalog-artist", onLibraryArtist);
+  }, []);
+
   function openBrowser() {
     if (!query) {
       const mainQuery = document.querySelector<HTMLInputElement>('input[aria-label="Recherche multi-provider"]')?.value.trim();
@@ -104,7 +144,7 @@ export function CatalogBrowser() {
     setError(undefined);
     try {
       const body = await catalogRequest(`/api/catalog?releaseGroupId=${encodeURIComponent(release.id)}`);
-      if (body.mode === "release") setSelectedRelease(body.release);
+      if (body.mode === "release") setSelectedRelease(body.release ? { ...body.release, genres: release.genres } : null);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Tracklist indisponible");
       setSelectedRelease(null);
@@ -205,11 +245,12 @@ export function CatalogBrowser() {
                       <p>{selectedRelease.status ?? "Release"} · {yearOf(selectedRelease.date)}{selectedRelease.country ? ` · ${selectedRelease.country}` : ""}</p>
                       <h3>{selectedRelease.title}</h3>
                       <span>{selectedRelease.tracks.length} piste{selectedRelease.tracks.length > 1 ? "s" : ""}</span>
+                      {selectedRelease.genres.length ? <div className="catalog-genre-list">{selectedRelease.genres.map((genre) => <span key={genre}>{genre}</span>)}</div> : null}
                       <div className="catalog-release-actions">
                         <button className="catalog-import-button" type="button" disabled={importing} onClick={() => void importAlbum()}>
                           {importing ? "Ajout & sources…" : "+ Ajouter l’album complet"}
                         </button>
-                        <small>Crée l’album et sa tracklist puis tente une première résolution automatique des sources de lecture.</small>
+                        <small>Crée l’album et sa tracklist, conserve les genres MusicBrainz puis tente une première résolution automatique des sources.</small>
                       </div>
                       {importStatus ? <div className="catalog-import-status">{importStatus}</div> : null}
                     </div>
@@ -234,7 +275,7 @@ export function CatalogBrowser() {
                 <div className="catalog-release-grid">
                   {releases.map((release) => <button className="catalog-release-card" type="button" key={release.id} onClick={() => void loadRelease(release)}>
                     <div className="catalog-cover" style={release.artwork ? { backgroundImage: `url("${release.artwork}")` } : undefined}>▦</div>
-                    <span><strong>{release.title}</strong><small>{yearOf(release.firstReleaseDate)} · {release.primaryType ?? "Release"}{release.secondaryTypes.length ? ` · ${release.secondaryTypes.join(", ")}` : ""}</small></span>
+                    <span><strong>{release.title}</strong><small>{yearOf(release.firstReleaseDate)} · {release.primaryType ?? "Release"}{release.secondaryTypes.length ? ` · ${release.secondaryTypes.join(", ")}` : ""}{release.genres.length ? ` · ${release.genres.slice(0, 2).join(", ")}` : ""}</small></span>
                   </button>)}
                   {!loading && !releases.length ? <div className="catalog-empty">Aucun album ou EP trouvé.</div> : null}
                 </div>
@@ -255,7 +296,7 @@ export function CatalogBrowser() {
           </div>
 
           <footer className="catalog-footer">
-            <span>MusicBrainz fournit la structure canonique. Streamall tente ensuite de relier automatiquement les pistes aux sources YouTube, Audius et Jamendo ; les correspondances incertaines restent volontairement sans source.</span>
+            <span>MusicBrainz fournit la structure canonique et les genres. Streamall relie ensuite les pistes aux sources YouTube, Audius et Jamendo ; les correspondances incertaines restent volontairement sans source.</span>
           </footer>
         </section>
       </div> : null}
