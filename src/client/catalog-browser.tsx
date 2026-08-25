@@ -137,7 +137,7 @@ export function CatalogBrowser() {
         setImportStatus(`✓ Album déjà présent · ${body.existingTracks ?? selectedRelease.tracks.length} pistes reconnues`);
       } else {
         setImportStatus(`✓ Album ajouté · ${body.addedTracks ?? 0} piste${(body.addedTracks ?? 0) > 1 ? "s" : ""} créée${(body.addedTracks ?? 0) > 1 ? "s" : ""}`);
-        window.setTimeout(() => window.location.reload(), 900);
+        window.setTimeout(() => window.location.assign("/?section=albums"), 900);
       }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Import impossible");
