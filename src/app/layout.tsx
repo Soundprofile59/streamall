@@ -6,6 +6,9 @@ import "./interaction-refresh.css";
 import "./search-preview.css";
 import "./star-rating.css";
 import "./catalog-browser.css";
+import "./build-badge.css";
+
+const APP_VERSION = "0.1.0";
 
 export const metadata: Metadata = {
   title: "Streamall",
@@ -19,9 +22,18 @@ export const metadata: Metadata = {
 export const viewport: Viewport = { themeColor: "#08090c", colorScheme: "dark" };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  const buildSha = (process.env.VERCEL_GIT_COMMIT_SHA ?? process.env.GITHUB_SHA ?? "local").slice(0, 7);
+  const buildLabel = `v${APP_VERSION} · ${buildSha}`;
+
   return (
     <html lang="fr">
-      <body>{children}<CatalogBrowser /></body>
+      <body>
+        {children}
+        <CatalogBrowser />
+        <div className="build-badge" title={`Streamall ${buildLabel}`} aria-label={`Version Streamall ${buildLabel}`}>
+          {buildLabel}
+        </div>
+      </body>
     </html>
   );
 }
