@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { AlbumDeleteShortcut } from "@/client/album-delete-shortcut";
 import { CatalogBrowser } from "@/client/catalog-browser";
 import { MoodMatrixDialog } from "@/client/mood-matrix-dialog";
+import { PlaybackRowHighlight } from "@/client/playback-row-highlight";
 import { SearchModeBridge } from "@/client/search-mode-bridge";
 import "./globals.css";
 import "./ui-refresh.css";
@@ -20,9 +21,10 @@ import "./v081-integration.css";
 import "./v082-layout.css";
 import "./v083-mood-matrix.css";
 import "./v084-album-delete.css";
+import "./v089-player-ux.css";
 import "./build-badge.css";
 
-const APP_VERSION = "0.8.8";
+const APP_VERSION = "0.8.9";
 
 export const metadata: Metadata = {
   title: "Streamall",
@@ -46,6 +48,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         <CatalogBrowser />
         <SearchModeBridge />
         <MoodMatrixDialog />
+        <PlaybackRowHighlight />
         <AlbumDeleteShortcut />
         <div className="build-badge" title={`Streamall ${buildLabel}`} aria-label={`Version Streamall ${buildLabel}`}>
           {buildLabel}
