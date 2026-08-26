@@ -1,23 +1,47 @@
 .album-delete-shortcut {
-  position: static !important;
+  position: absolute;
+  top: 7px;
+  left: 7px;
+  z-index: 7;
   width: 24px;
   height: 24px;
   display: grid;
   place-items: center;
-  border: 1px solid #4a3638;
+  border: 1px solid rgba(126, 70, 76, .75);
   border-radius: 50%;
-  background: #1b1719;
-  color: #c6a8ab;
+  background: rgba(23, 14, 16, .9);
+  color: #d5afb4;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, .36);
+  backdrop-filter: blur(6px);
   padding: 0;
   cursor: pointer;
   font: inherit;
   font-size: 13px;
   line-height: 1;
+  opacity: 0;
+  transform: translateY(-3px);
+  pointer-events: none;
+  transition: opacity .14s ease, transform .14s ease, border-color .14s ease, color .14s ease;
+}
+
+.album-tile:hover > .album-delete-shortcut,
+.album-tile:focus-within > .album-delete-shortcut {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
 }
 
 .album-delete-shortcut:hover,
 .album-delete-shortcut:focus-visible {
-  border-color: #8b4b52;
-  color: #ff8e98;
+  border-color: #a9535d;
+  color: #ff9ca5;
   outline: none;
+}
+
+@media (hover: none) {
+  .album-delete-shortcut {
+    opacity: .92;
+    transform: none;
+    pointer-events: auto;
+  }
 }
