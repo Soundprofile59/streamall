@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { createPortal } from "react-dom";
 import type { CatalogApiResponse, CatalogArtist, CatalogReleaseDetail, CatalogReleaseGroup, CatalogTrack } from "@/domain/catalog";
 
 const SEARCH_HISTORY_KEY = "streamall:search-history:v1";
@@ -45,6 +46,7 @@ function rememberCatalogSearch(query: string) {
 
 export function CatalogBrowser() {
   const [open, setOpen] = useState(false);
+  const [host, setHost] = useState<HTMLElement>();
   const [query, setQuery] = useState("");
   const [artists, setArtists] = useState<CatalogArtist[]>([]);
   const [selectedArtist, setSelectedArtist] = useState<CatalogArtist>();
@@ -57,13 +59,28 @@ export function CatalogBrowser() {
   const [error, setError] = useState<string>();
   const libraryDirty = useRef(false);
 
+  function activateBrowser() {
+    const contentHost = document.querySelector<HTMLElement>(".content-panel");
+    if (!contentHost) return false;
+    contentHost.classList.add("catalog-inline-active");
+    setHost(contentHost);
+    setOpen(true);
+    return true;
+  }
+
   function closeBrowser() {
+    host?.classList.remove("catalog-inline-active");
     setOpen(false);
+    setHost(undefined);
     if (libraryDirty.current) {
       libraryDirty.current = false;
       window.setTimeout(() => window.location.reload(), 0);
     }
   }
+
+  useEffect(() => () => {
+    document.querySelector<HTMLElement>(".content-panel")?.classList.remove("catalog-inline-active");
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -72,14 +89,13 @@ export function CatalogBrowser() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open]);
+  }, [open, host]);
 
   useEffect(() => {
     const onLibraryArtist = (event: Event) => {
       const name = (event as CustomEvent<{ name?: string }>).detail?.name?.trim();
-      if (!name) return;
+      if (!name || !activateBrowser()) return;
 
-      setOpen(true);
       setQuery(name);
       setLoading(true);
       setError(undefined);
@@ -115,11 +131,11 @@ export function CatalogBrowser() {
   }, []);
 
   function openBrowser() {
+    if (!activateBrowser()) return;
     if (!query) {
       const mainQuery = document.querySelector<HTMLInputElement>('input[aria-label="Recherche multi-provider"]')?.value.trim();
       if (mainQuery) setQuery(mainQuery);
     }
-    setOpen(true);
   }
 
   async function searchArtists(event: FormEvent) {
@@ -247,110 +263,111 @@ export function CatalogBrowser() {
     }));
   }
 
+  const browser = <div className="catalog-inline-mount">
+    <section className="catalog-browser catalog-browser-inline" aria-label="Catalogue albums et EP">
+      <header className="catalog-header">
+        <div>
+          <p>CATALOGUE CANONIQUE · MUSICBRAINZ</p>
+          <h2>Albums & EP</h2>
+        </div>
+        <button type="button" onClick={closeBrowser} aria-label="Retour à la bibliothèque" title="Retour à la bibliothèque">×</button>
+      </header>
+
+      <form className="catalog-search" onSubmit={(event) => void searchArtists(event)}>
+        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Chercher un artiste…" autoFocus />
+        <button type="submit" disabled={loading || query.trim().length < 2}>{loading ? "…" : "Chercher"}</button>
+      </form>
+
+      {error ? <p className="catalog-error">{error}</p> : null}
+
+      <div className="catalog-content">
+        {selectedRelease !== undefined ? (
+          <div className="catalog-release-detail">
+            <button className="catalog-back" type="button" onClick={() => { setSelectedRelease(undefined); setImportStatus(undefined); }}>← Discographie</button>
+            {selectedRelease ? <>
+              <div className="catalog-release-hero">
+                <div className="catalog-cover large" style={selectedRelease.artwork ? { backgroundImage: `url("${selectedRelease.artwork}")` } : undefined}>▦</div>
+                <div className="catalog-release-copy">
+                  <p>{selectedArtist?.name ?? "Artiste inconnu"} · {selectedRelease.status ?? "Release"} · {yearOf(selectedRelease.date)}{selectedRelease.country ? ` · ${selectedRelease.country}` : ""}</p>
+                  <h3>{selectedRelease.title}</h3>
+                  <span>{selectedRelease.tracks.length} piste{selectedRelease.tracks.length > 1 ? "s" : ""}</span>
+                  {selectedRelease.genres.length ? <div className="catalog-genre-list">{selectedRelease.genres.map((genre) => <span key={genre}>{genre}</span>)}</div> : null}
+                  <div className="catalog-release-actions">
+                    <button className="catalog-import-button" type="button" disabled={importingReleaseIds.includes(selectedRelease.releaseGroupId) || addedReleaseIds.includes(selectedRelease.releaseGroupId)} onClick={() => void importSelectedAlbum()}>
+                      {addedReleaseIds.includes(selectedRelease.releaseGroupId) ? "✓ Ajouté" : importingReleaseIds.includes(selectedRelease.releaseGroupId) ? "Ajout…" : "+ Ajouter l’album"}
+                    </button>
+                    <small>L’album reste affiché après l’ajout ; les sources de lecture sont recherchées automatiquement en interne.</small>
+                  </div>
+                  {importStatus ? <div className="catalog-import-status">{importStatus}</div> : null}
+                </div>
+              </div>
+              <div className="catalog-tracklist">
+                {selectedRelease.tracks.map((track) => <div className="catalog-track" key={`${track.position}:${track.title}`}>
+                  <span className="catalog-track-number">{track.number ?? track.position}</span>
+                  <span><strong>{track.title}</strong><small>{track.artistName}</small></span>
+                  <span className="catalog-track-duration">{formatDuration(track.lengthMs)}</span>
+                  <button className="catalog-track-preview" type="button" onClick={() => previewTrack(track)} title={`Lire ${track.title} dans le lecteur principal`}>▶ Lire</button>
+                </div>)}
+              </div>
+            </> : <div className="catalog-empty">Aucune édition officielle exploitable trouvée pour cette sortie.</div>}
+          </div>
+        ) : selectedArtist ? (
+          <div>
+            <div className="catalog-subhead">
+              <button className="catalog-back" type="button" onClick={() => { setSelectedArtist(undefined); setReleases([]); setImportStatus(undefined); }}>← Artistes</button>
+              <div><p>DISCOGRAPHIE</p><h3>{selectedArtist.name}</h3></div>
+              <span>{releases.length} sortie{releases.length > 1 ? "s" : ""}</span>
+            </div>
+            {importStatus ? <div className="catalog-import-status catalog-import-status-grid">{importStatus}</div> : null}
+            <div className="catalog-release-grid">
+              {releases.map((release) => {
+                const busy = importingReleaseIds.includes(release.id);
+                const added = addedReleaseIds.includes(release.id);
+                return <article className="catalog-release-card" key={release.id}>
+                  <div className="catalog-release-cover-wrap">
+                    <button className="catalog-release-cover-open" type="button" onClick={() => void loadRelease(release)} aria-label={`Ouvrir ${release.title}`}>
+                      <div className="catalog-cover" style={release.artwork ? { backgroundImage: `url("${release.artwork}")` } : undefined}>▦</div>
+                    </button>
+                    <button className={`catalog-release-add ${added ? "added" : ""}`} type="button" disabled={busy || added} onClick={() => void quickAddRelease(release)}>
+                      {added ? "✓ Ajouté" : busy ? "Ajout…" : "+ Ajouter l’album"}
+                    </button>
+                  </div>
+                  <button className="catalog-release-copy" type="button" onClick={() => void loadRelease(release)}>
+                    <strong>{release.title}</strong>
+                    <small>{release.artistName ?? selectedArtist.name} · {yearOf(release.firstReleaseDate)} · {release.primaryType ?? "Release"}{release.secondaryTypes.length ? ` · ${release.secondaryTypes.join(", ")}` : ""}{release.genres.length ? ` · ${release.genres.slice(0, 2).join(", ")}` : ""}</small>
+                  </button>
+                </article>;
+              })}
+              {!loading && !releases.length ? <div className="catalog-empty">Aucun album ou EP trouvé.</div> : null}
+            </div>
+          </div>
+        ) : (
+          <div>
+            <div className="catalog-subhead"><div><p>RÉSULTATS ARTISTES</p><h3>{artists.length ? `${artists.length} correspondance${artists.length > 1 ? "s" : ""}` : "Cherchez un artiste"}</h3></div></div>
+            <div className="catalog-artist-list">
+              {artists.map((artist) => <button type="button" key={artist.id} onClick={() => void loadArtist(artist)}>
+                <span className="catalog-artist-mark">◎</span>
+                <span><strong>{artist.name}</strong><small>{[artist.type, artist.country, artist.disambiguation].filter(Boolean).join(" · ") || "Artiste MusicBrainz"}</small></span>
+                <span>{artist.score !== undefined ? `${artist.score}%` : "→"}</span>
+              </button>)}
+              {!loading && !artists.length ? <div className="catalog-empty">Cherchez d’abord l’artiste, puis choisissez l’album ou l’EP à ajouter à votre bibliothèque.</div> : null}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <footer className="catalog-footer">
+        <span>MusicBrainz fournit l’identité, la discographie et les genres. Streamall gère ensuite les sources de lecture automatiquement en interne.</span>
+      </footer>
+    </section>
+  </div>;
+
   return (
     <>
       <button className="catalog-launcher" type="button" onClick={openBrowser} title="Explorer les albums et EP officiels">
         <span>▦</span> Albums / EP
       </button>
-
-      {open ? <div className="catalog-backdrop" onMouseDown={closeBrowser}>
-        <section className="catalog-browser" role="dialog" aria-modal="true" aria-label="Catalogue albums et EP" onMouseDown={(event) => event.stopPropagation()}>
-          <header className="catalog-header">
-            <div>
-              <p>CATALOGUE CANONIQUE · MUSICBRAINZ</p>
-              <h2>Albums & EP</h2>
-            </div>
-            <button type="button" onClick={closeBrowser} aria-label="Fermer">×</button>
-          </header>
-
-          <form className="catalog-search" onSubmit={(event) => void searchArtists(event)}>
-            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Chercher un artiste…" autoFocus />
-            <button type="submit" disabled={loading || query.trim().length < 2}>{loading ? "…" : "Chercher"}</button>
-          </form>
-
-          {error ? <p className="catalog-error">{error}</p> : null}
-
-          <div className="catalog-content">
-            {selectedRelease !== undefined ? (
-              <div className="catalog-release-detail">
-                <button className="catalog-back" type="button" onClick={() => { setSelectedRelease(undefined); setImportStatus(undefined); }}>← Discographie</button>
-                {selectedRelease ? <>
-                  <div className="catalog-release-hero">
-                    <div className="catalog-cover large" style={selectedRelease.artwork ? { backgroundImage: `url("${selectedRelease.artwork}")` } : undefined}>▦</div>
-                    <div className="catalog-release-copy">
-                      <p>{selectedArtist?.name ?? "Artiste inconnu"} · {selectedRelease.status ?? "Release"} · {yearOf(selectedRelease.date)}{selectedRelease.country ? ` · ${selectedRelease.country}` : ""}</p>
-                      <h3>{selectedRelease.title}</h3>
-                      <span>{selectedRelease.tracks.length} piste{selectedRelease.tracks.length > 1 ? "s" : ""}</span>
-                      {selectedRelease.genres.length ? <div className="catalog-genre-list">{selectedRelease.genres.map((genre) => <span key={genre}>{genre}</span>)}</div> : null}
-                      <div className="catalog-release-actions">
-                        <button className="catalog-import-button" type="button" disabled={importingReleaseIds.includes(selectedRelease.releaseGroupId) || addedReleaseIds.includes(selectedRelease.releaseGroupId)} onClick={() => void importSelectedAlbum()}>
-                          {addedReleaseIds.includes(selectedRelease.releaseGroupId) ? "✓ Ajouté" : importingReleaseIds.includes(selectedRelease.releaseGroupId) ? "Ajout…" : "+ Ajouter l’album"}
-                        </button>
-                        <small>L’album reste affiché après l’ajout ; les sources de lecture sont recherchées automatiquement en interne.</small>
-                      </div>
-                      {importStatus ? <div className="catalog-import-status">{importStatus}</div> : null}
-                    </div>
-                  </div>
-                  <div className="catalog-tracklist">
-                    {selectedRelease.tracks.map((track) => <div className="catalog-track" key={`${track.position}:${track.title}`}>
-                      <span className="catalog-track-number">{track.number ?? track.position}</span>
-                      <span><strong>{track.title}</strong><small>{track.artistName}</small></span>
-                      <span className="catalog-track-duration">{formatDuration(track.lengthMs)}</span>
-                      <button className="catalog-track-preview" type="button" onClick={() => previewTrack(track)} title={`Préécouter ${track.title}`}>▶ Écouter</button>
-                    </div>)}
-                  </div>
-                </> : <div className="catalog-empty">Aucune édition officielle exploitable trouvée pour cette sortie.</div>}
-              </div>
-            ) : selectedArtist ? (
-              <div>
-                <div className="catalog-subhead">
-                  <button className="catalog-back" type="button" onClick={() => { setSelectedArtist(undefined); setReleases([]); setImportStatus(undefined); }}>← Artistes</button>
-                  <div><p>DISCOGRAPHIE</p><h3>{selectedArtist.name}</h3></div>
-                  <span>{releases.length} sortie{releases.length > 1 ? "s" : ""}</span>
-                </div>
-                {importStatus ? <div className="catalog-import-status catalog-import-status-grid">{importStatus}</div> : null}
-                <div className="catalog-release-grid">
-                  {releases.map((release) => {
-                    const busy = importingReleaseIds.includes(release.id);
-                    const added = addedReleaseIds.includes(release.id);
-                    return <article className="catalog-release-card" key={release.id}>
-                      <div className="catalog-release-cover-wrap">
-                        <button className="catalog-release-cover-open" type="button" onClick={() => void loadRelease(release)} aria-label={`Ouvrir ${release.title}`}>
-                          <div className="catalog-cover" style={release.artwork ? { backgroundImage: `url("${release.artwork}")` } : undefined}>▦</div>
-                        </button>
-                        <button className={`catalog-release-add ${added ? "added" : ""}`} type="button" disabled={busy || added} onClick={() => void quickAddRelease(release)}>
-                          {added ? "✓ Ajouté" : busy ? "Ajout…" : "+ Ajouter l’album"}
-                        </button>
-                      </div>
-                      <button className="catalog-release-copy" type="button" onClick={() => void loadRelease(release)}>
-                        <strong>{release.title}</strong>
-                        <small>{release.artistName ?? selectedArtist.name} · {yearOf(release.firstReleaseDate)} · {release.primaryType ?? "Release"}{release.secondaryTypes.length ? ` · ${release.secondaryTypes.join(", ")}` : ""}{release.genres.length ? ` · ${release.genres.slice(0, 2).join(", ")}` : ""}</small>
-                      </button>
-                    </article>;
-                  })}
-                  {!loading && !releases.length ? <div className="catalog-empty">Aucun album ou EP trouvé.</div> : null}
-                </div>
-              </div>
-            ) : (
-              <div>
-                <div className="catalog-subhead"><div><p>RÉSULTATS ARTISTES</p><h3>{artists.length ? `${artists.length} correspondance${artists.length > 1 ? "s" : ""}` : "Cherchez un artiste"}</h3></div></div>
-                <div className="catalog-artist-list">
-                  {artists.map((artist) => <button type="button" key={artist.id} onClick={() => void loadArtist(artist)}>
-                    <span className="catalog-artist-mark">◎</span>
-                    <span><strong>{artist.name}</strong><small>{[artist.type, artist.country, artist.disambiguation].filter(Boolean).join(" · ") || "Artiste MusicBrainz"}</small></span>
-                    <span>{artist.score !== undefined ? `${artist.score}%` : "→"}</span>
-                  </button>)}
-                  {!loading && !artists.length ? <div className="catalog-empty">Cherchez d’abord l’artiste, puis choisissez l’album ou l’EP à ajouter à votre bibliothèque.</div> : null}
-                </div>
-              </div>
-            )}
-          </div>
-
-          <footer className="catalog-footer">
-            <span>MusicBrainz fournit l’identité, la discographie et les genres. Streamall gère ensuite les sources de lecture automatiquement en interne.</span>
-          </footer>
-        </section>
-      </div> : null}
+      {open && host ? createPortal(browser, host) : null}
     </>
   );
 }
