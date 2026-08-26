@@ -5,6 +5,7 @@ import type { Album, Artist, LibrarySnapshot, PlayableItem } from "@/domain/type
 
 export type LibrarySection = "tracks" | "mixes" | "albums" | "artists" | "genres" | "moods";
 type TrackEditablePatch = Partial<Pick<PlayableItem, "genres" | "moods" | "rating" | "favorite" | "frequencyPreference">>;
+type AlbumSort = "artist" | "year" | "genre" | "rating";
 
 type Props = {
   section: LibrarySection;
@@ -84,7 +85,7 @@ function AlbumCard({ album, library, onOpen, onInspect, onPlay, onQueue }: {
   onPlay: () => void;
   onQueue: () => void;
 }) {
-  const { tracks, playable } = albumStats(album, library);
+  const { tracks } = albumStats(album, library);
   const artists = artistLabel(album.artistIds, library);
   const genres = album.genres ?? [];
   const stars = albumRating(album);
@@ -95,8 +96,6 @@ function AlbumCard({ album, library, onOpen, onInspect, onPlay, onQueue }: {
           {!album.artwork ? <span className="album-cover-fallback">S</span> : null}
           <span className="album-hover-info">
             <strong>{tracks.length} piste{tracks.length > 1 ? "s" : ""}</strong>
-            <small>{playable}/{tracks.length} jouable{playable > 1 ? "s" : ""}</small>
-            {genres.length ? <small>{genres.slice(0, 2).join(" · ")}</small> : null}
             <span>Ouvrir l’album</span>
           </span>
         </span>
@@ -104,6 +103,7 @@ function AlbumCard({ album, library, onOpen, onInspect, onPlay, onQueue }: {
       <div className="album-tile-copy">
         <button type="button" className="album-title-button" onClick={onOpen}><strong>{album.title}</strong></button>
         <small>{artists}{album.year ? ` · ${album.year}` : ""}{stars ? ` · ${"★".repeat(stars)}` : ""}</small>
+        <small className={`album-tile-genres ${genres.length ? "" : "empty"}`}>{genres.length ? genres.slice(0, 3).join(" · ") : "Genre non renseigné"}</small>
       </div>
       <div className="album-tile-actions">
         <button className="album-info-shortcut" type="button" onClick={onInspect} title="Informations de l’album" aria-label={`Informations de ${album.title}`}>ⓘ</button>
@@ -126,7 +126,7 @@ function AlbumDetail({ album, library, selectedId, backLabel, onBack, onInspect,
   onPlayItem: (itemId: string) => void;
   onPlayAlbum: (albumId: string) => void;
 }) {
-  const { tracks, playable } = albumStats(album, library);
+  const { tracks } = albumStats(album, library);
   const artists = artistLabel(album.artistIds, library);
   const genres = album.genres ?? [];
   const stars = albumRating(album);
@@ -143,7 +143,7 @@ function AlbumDetail({ album, library, selectedId, backLabel, onBack, onInspect,
           <button className="album-detail-title-button" type="button" onClick={onInspect}><h2>{album.title}</h2></button>
           <p>{artists}{album.year ? ` · ${album.year}` : ""}{stars ? ` · ${"★".repeat(stars)}` : ""}</p>
           {genres.length ? <div className="album-genre-list">{genres.map((genre) => <span key={genre}>{genre}</span>)}</div> : null}
-          <div className="album-detail-stats"><span>{tracks.length} piste{tracks.length > 1 ? "s" : ""}</span><span>{playable}/{tracks.length} jouable{playable > 1 ? "s" : ""}</span></div>
+          <div className="album-detail-stats"><span>{tracks.length} piste{tracks.length > 1 ? "s" : ""}</span></div>
           <div className="album-detail-actions">
             <button className="album-play-all" type="button" onClick={() => onPlayAlbum(album.id)}>▶ Lire l’album</button>
             <button className="album-queue-button" type="button" onClick={onQueue}>＋ File d’attente</button>
@@ -183,7 +183,7 @@ function AlbumInfoPanel({ album, library, onClose, onQueue, onPlay }: {
   const [personalRating, setPersonalRating] = useState<number | undefined>(albumRating(album));
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<string>();
-  const { tracks, playable } = albumStats(album, library);
+  const { tracks } = albumStats(album, library);
   const artists = artistLabel(album.artistIds, library);
   const genres = album.genres ?? [];
 
@@ -242,7 +242,7 @@ function AlbumInfoPanel({ album, library, onClose, onQueue, onPlay }: {
           <button type="button" onClick={onPlay}>▶ Lire</button>
           <button type="button" onClick={onQueue}>＋ File d’attente</button>
         </div>
-        <div className="album-info-stats"><span><strong>{tracks.length}</strong> pistes</span><span><strong>{playable}</strong> jouables</span></div>
+        <div className="album-info-stats"><span><strong>{tracks.length}</strong> pistes</span></div>
         {genres.length ? <div className="album-genre-list info">{genres.map((genre) => <span key={genre}>{genre}</span>)}</div> : <p className="album-no-genres">Genres non renseignés · ils seront ajoutés automatiquement lors de l’enrichissement catalogue.</p>}
         <form className="album-info-form" onSubmit={(event) => void save(event)}>
           <div className="rating-row album-rating-row">
@@ -349,6 +349,7 @@ export function CollectionView({ section, library, selectedId, onSelectItem, onP
   const [selectedAlbumId, setSelectedAlbumId] = useState<string>();
   const [selectedArtistId, setSelectedArtistId] = useState<string>();
   const [inspectedAlbumId, setInspectedAlbumId] = useState<string>();
+  const [albumSort, setAlbumSort] = useState<AlbumSort>("artist");
 
   const selectedAlbum = library.albums.find((album) => album.id === selectedAlbumId);
   const selectedArtist = library.artists.find((artist) => artist.id === selectedArtistId);
@@ -358,6 +359,28 @@ export function CollectionView({ section, library, selectedId, onSelectItem, onP
         .filter((album) => album.artistIds.includes(selectedArtist.id))
         .sort((a, b) => (a.year ?? 9999) - (b.year ?? 9999) || a.title.localeCompare(b.title, "fr", { sensitivity: "base" }))
     : [], [library.albums, selectedArtist]);
+  const sortedAlbums = useMemo(() => {
+    const albums = [...library.albums];
+    const byArtistThenTitle = (a: Album, b: Album) => {
+      const artistCompare = artistLabel(a.artistIds, library).localeCompare(artistLabel(b.artistIds, library), "fr", { sensitivity: "base" });
+      return artistCompare || a.title.localeCompare(b.title, "fr", { sensitivity: "base" });
+    };
+
+    if (albumSort === "year") {
+      return albums.sort((a, b) => (b.year ?? -1) - (a.year ?? -1) || byArtistThenTitle(a, b));
+    }
+    if (albumSort === "genre") {
+      return albums.sort((a, b) => {
+        const genreA = a.genres?.[0] ?? "zzzzzz";
+        const genreB = b.genres?.[0] ?? "zzzzzz";
+        return genreA.localeCompare(genreB, "fr", { sensitivity: "base" }) || byArtistThenTitle(a, b);
+      });
+    }
+    if (albumSort === "rating") {
+      return albums.sort((a, b) => (albumRating(b) ?? 0) - (albumRating(a) ?? 0) || byArtistThenTitle(a, b));
+    }
+    return albums.sort(byArtistThenTitle);
+  }, [albumSort, library]);
   const looseTracks = useMemo(() => library.tracks.filter((track) => !track.albumId), [library.tracks]);
   const genreTags = useMemo(() => [...new Set([
     ...library.genres,
@@ -404,11 +427,21 @@ export function CollectionView({ section, library, selectedId, onSelectItem, onP
       {albumDetail ?? artistDiscography ?? <div className={`collection-view section-${section}`}>
         <div className="section-heading collection-heading">
           <div><p className="eyebrow">{section.toUpperCase()}</p><h2>{title}</h2></div>
-          {section === "albums" && looseTracks.length ? <span className="collection-summary">{looseTracks.length} titre{looseTracks.length > 1 ? "s" : ""} hors album</span> : null}
+          {section === "albums" ? <div className="album-heading-tools">
+            <label>Trier
+              <select value={albumSort} onChange={(event) => setAlbumSort(event.target.value as AlbumSort)}>
+                <option value="artist">Artiste A–Z</option>
+                <option value="year">Année · récent d’abord</option>
+                <option value="genre">Genre A–Z</option>
+                <option value="rating">Note · meilleure d’abord</option>
+              </select>
+            </label>
+            {looseTracks.length ? <span className="collection-summary">{looseTracks.length} titre{looseTracks.length > 1 ? "s" : ""} hors album</span> : null}
+          </div> : null}
         </div>
 
         {section === "albums" ? (
-          library.albums.length ? <div className="album-mosaic">{library.albums.map((album) => <AlbumCard key={album.id} album={album} library={library} onOpen={() => setSelectedAlbumId(album.id)} onInspect={() => setInspectedAlbumId(album.id)} onPlay={() => onPlayAlbum(album.id)} onQueue={() => onQueueAlbum(album.id)} />)}</div> : <div className="empty-state"><p>Aucun album pour l’instant.</p><span>Ajoutez un album depuis la recherche Catalogue.</span></div>
+          library.albums.length ? <div className="album-mosaic">{sortedAlbums.map((album) => <AlbumCard key={album.id} album={album} library={library} onOpen={() => setSelectedAlbumId(album.id)} onInspect={() => setInspectedAlbumId(album.id)} onPlay={() => onPlayAlbum(album.id)} onQueue={() => onQueueAlbum(album.id)} />)}</div> : <div className="empty-state"><p>Aucun album pour l’instant.</p><span>Ajoutez un album depuis la recherche Catalogue.</span></div>
         ) : null}
 
         {section === "tracks" ? (library.tracks.length ? <TrackList items={library.tracks} library={library} selectedId={selectedId} genreOptions={genreTags} onSelectItem={onSelectItem} onPlayItem={onPlayItem} onQueueItem={onQueueItem} onEditItem={onEditItem} /> : <div className="empty-state"><p>Votre collection est prête à être remplie.</p><span>Utilisez la recherche Catalogue.</span></div>) : null}
