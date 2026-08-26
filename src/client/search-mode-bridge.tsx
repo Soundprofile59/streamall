@@ -41,6 +41,7 @@ export function SearchModeBridge() {
   const [history, setHistory] = useState<SearchHistoryEntry[]>(readHistory);
   const [historyOpen, setHistoryOpen] = useState(false);
   const forceTrackSubmit = useRef(false);
+  const suppressTrackHistory = useRef(false);
 
   useEffect(() => {
     const findHost = () => {
@@ -107,7 +108,8 @@ export function SearchModeBridge() {
       const value = input.value.trim();
       if (forceTrackSubmit.current) {
         forceTrackSubmit.current = false;
-        remember(value, "tracks");
+        if (!suppressTrackHistory.current) remember(value, "tracks");
+        suppressTrackHistory.current = false;
         setHistoryOpen(false);
         return;
       }
@@ -167,13 +169,17 @@ export function SearchModeBridge() {
       const title = detail?.title?.trim();
       if (!title) return;
 
+      const previousValue = input.value;
       const value = [artistName, title].filter(Boolean).join(" ");
-      setMode("tracks");
       setHistoryOpen(false);
-      document.querySelector<HTMLButtonElement>(".search-results .text-button")?.click();
       setNativeValue(input, value);
       forceTrackSubmit.current = true;
+      suppressTrackHistory.current = true;
       host.requestSubmit();
+
+      const restoreSearchField = () => {
+        setNativeValue(input, previousValue);
+      };
 
       const startedAt = Date.now();
       const observer = new MutationObserver(() => {
@@ -181,12 +187,17 @@ export function SearchModeBridge() {
         if (preview) {
           observer.disconnect();
           preview.click();
+          window.requestAnimationFrame(restoreSearchField);
         } else if (Date.now() - startedAt > 12_000) {
           observer.disconnect();
+          restoreSearchField();
         }
       });
       observer.observe(document.body, { childList: true, subtree: true });
-      window.setTimeout(() => observer.disconnect(), 12_500);
+      window.setTimeout(() => {
+        observer.disconnect();
+        restoreSearchField();
+      }, 12_500);
     };
 
     window.addEventListener("streamall:preview-catalog-track", onCatalogTrackPreview);
