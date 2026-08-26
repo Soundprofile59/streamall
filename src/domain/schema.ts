@@ -78,6 +78,7 @@ export const settingsSchema = z.object({
     rediscoveryStrength: z.number().min(0).max(5),
     mixFrequency: z.enum(["NEVER", "RARE", "NORMAL", "FREQUENT"]),
   }),
+  moodMap: z.record(z.string().min(1), z.array(z.string().min(1))).optional(),
 });
 
 export const librarySnapshotSchema = z.object({
