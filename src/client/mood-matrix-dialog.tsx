@@ -44,7 +44,7 @@ export function MoodMatrixDialog() {
 
   useEffect(() => {
     const findHost = () => {
-      const node = document.querySelector<HTMLElement>(".nav-actions");
+      const node = document.querySelector<HTMLElement>(".library-nav");
       if (node) setHost(node);
       return Boolean(node);
     };
@@ -232,7 +232,7 @@ export function MoodMatrixDialog() {
   </div> : null;
 
   return <>
-    {host ? createPortal(<button className="mood-matrix-launcher" type="button" onClick={() => void showDialog()}>Table Genres → Moods</button>, host) : null}
+    {host ? createPortal(<button className="mood-matrix-launcher" type="button" onClick={() => void showDialog()}>⚙ Genres → Moods</button>, host) : null}
     {popup ? createPortal(popup, document.body) : null}
   </>;
 }
