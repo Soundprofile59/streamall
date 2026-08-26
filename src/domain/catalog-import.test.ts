@@ -17,7 +17,7 @@ const release = {
 };
 
 describe("importCatalogRelease", () => {
-  it("creates an artist, album and unresolved canonical tracks with catalog genres", () => {
+  it("creates an artist, album and unresolved canonical tracks with catalog genres and inferred moods", () => {
     const result = importCatalogRelease(emptyLibrary("2026-08-25T00:00:00.000Z"), artist, release);
     expect(result.artistCreated).toBe(true);
     expect(result.albumCreated).toBe(true);
@@ -30,6 +30,7 @@ describe("importCatalogRelease", () => {
     expect(result.snapshot.tracks[0]?.duration).toBe(300);
     expect(result.snapshot.albums[0]?.genres).toEqual(["Electronic", "Trip hop"]);
     expect(result.snapshot.tracks[0]?.genres).toEqual(["Electronic", "Trip hop"]);
+    expect(result.snapshot.tracks[0]?.moods).toEqual(["Cool", "Groovy", "Planant", "Sombre"]);
     expect(result.snapshot.genres).toEqual(["Electronic", "Trip hop"]);
   });
 
