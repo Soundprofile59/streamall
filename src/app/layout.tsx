@@ -23,9 +23,10 @@ import "./v083-mood-matrix.css";
 import "./v084-album-delete.css";
 import "./v089-player-ux.css";
 import "./v0810-typography.css";
+import "./v0811-typography.css";
 import "./build-badge.css";
 
-const APP_VERSION = "0.8.10";
+const APP_VERSION = "0.8.11";
 
 export const metadata: Metadata = {
   title: "Streamall",
