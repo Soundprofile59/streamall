@@ -1,8 +1,14 @@
+.album-tile {
+  position: relative !important;
+}
+
 .album-delete-shortcut {
-  position: absolute;
-  top: 7px;
-  left: 7px;
-  z-index: 7;
+  position: absolute !important;
+  top: 6px !important;
+  left: 6px !important;
+  right: auto !important;
+  bottom: auto !important;
+  z-index: 20 !important;
   width: 24px;
   height: 24px;
   display: grid;
@@ -14,6 +20,7 @@
   box-shadow: 0 4px 12px rgba(0, 0, 0, .36);
   backdrop-filter: blur(6px);
   padding: 0;
+  margin: 0 !important;
   cursor: pointer;
   font: inherit;
   font-size: 13px;
