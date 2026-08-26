@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
-import type { CatalogApiResponse, CatalogArtist, CatalogReleaseDetail, CatalogReleaseGroup } from "@/domain/catalog";
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import type { CatalogApiResponse, CatalogArtist, CatalogReleaseDetail, CatalogReleaseGroup, CatalogTrack } from "@/domain/catalog";
+
+const SEARCH_HISTORY_KEY = "streamall:search-history:v1";
 
 function yearOf(date?: string) {
   return date?.slice(0, 4) || "—";
@@ -25,6 +27,22 @@ async function catalogRequest(url: string): Promise<CatalogApiResponse> {
   return body;
 }
 
+function rememberCatalogSearch(query: string) {
+  try {
+    const normalized = query.trim();
+    if (normalized.length < 2) return;
+    const current = JSON.parse(window.localStorage.getItem(SEARCH_HISTORY_KEY) ?? "[]") as Array<{ query?: string; mode?: string }>;
+    const next = [
+      { query: normalized, mode: "catalog" },
+      ...current.filter((entry) => entry?.query?.toLocaleLowerCase() !== normalized.toLocaleLowerCase()),
+    ].slice(0, 8);
+    window.localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(next));
+    window.dispatchEvent(new Event("streamall:search-history-updated"));
+  } catch {
+    // L'historique local ne doit jamais bloquer la recherche catalogue.
+  }
+}
+
 export function CatalogBrowser() {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -33,14 +51,24 @@ export function CatalogBrowser() {
   const [releases, setReleases] = useState<CatalogReleaseGroup[]>([]);
   const [selectedRelease, setSelectedRelease] = useState<CatalogReleaseDetail | null>();
   const [loading, setLoading] = useState(false);
-  const [importing, setImporting] = useState(false);
+  const [importingReleaseIds, setImportingReleaseIds] = useState<string[]>([]);
+  const [addedReleaseIds, setAddedReleaseIds] = useState<string[]>([]);
   const [importStatus, setImportStatus] = useState<string>();
   const [error, setError] = useState<string>();
+  const libraryDirty = useRef(false);
+
+  function closeBrowser() {
+    setOpen(false);
+    if (libraryDirty.current) {
+      libraryDirty.current = false;
+      window.setTimeout(() => window.location.reload(), 0);
+    }
+  }
 
   useEffect(() => {
     if (!open) return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
+      if (event.key === "Escape") closeBrowser();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -98,6 +126,7 @@ export function CatalogBrowser() {
     event.preventDefault();
     const value = query.trim();
     if (value.length < 2) return;
+    rememberCatalogSearch(value);
     setLoading(true);
     setError(undefined);
     setImportStatus(undefined);
@@ -147,58 +176,75 @@ export function CatalogBrowser() {
     }
   }
 
-  async function importAlbum() {
-    if (!selectedArtist || !selectedRelease || importing) return;
-    setImporting(true);
+  function setReleaseBusy(releaseGroupId: string, busy: boolean) {
+    setImportingReleaseIds((current) => busy
+      ? [...new Set([...current, releaseGroupId])]
+      : current.filter((id) => id !== releaseGroupId));
+  }
+
+  async function persistAlbum(release: CatalogReleaseDetail) {
+    if (!selectedArtist) throw new Error("Artiste introuvable pour cet album.");
+    const response = await fetch("/api/catalog/import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ artist: selectedArtist, release }),
+    });
+    const body = (await response.json().catch(() => null)) as {
+      albumId?: string;
+      addedTracks?: number;
+      existingTracks?: number;
+      albumCreated?: boolean;
+      message?: string;
+      error?: string;
+    } | null;
+    if (!response.ok || !body?.albumId) throw new Error(body?.message ?? body?.error ?? "Import impossible");
+
+    const imported = (body.addedTracks ?? 0) > 0 || Boolean(body.albumCreated);
+    setAddedReleaseIds((current) => current.includes(release.releaseGroupId) ? current : [...current, release.releaseGroupId]);
+    libraryDirty.current = true;
+    setImportStatus(`✓ ${release.title} ${imported ? "ajouté" : "déjà présent"} · ${body.addedTracks ?? 0} nouvelle${(body.addedTracks ?? 0) > 1 ? "s" : ""} piste${(body.addedTracks ?? 0) > 1 ? "s" : ""} · recherche des sources en arrière-plan`);
+
+    void fetch("/api/albums/resolve-sources", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ albumId: body.albumId }),
+    }).catch(() => undefined);
+  }
+
+  async function quickAddRelease(release: CatalogReleaseGroup) {
+    if (!selectedArtist || importingReleaseIds.includes(release.id) || addedReleaseIds.includes(release.id)) return;
+    setReleaseBusy(release.id, true);
     setError(undefined);
-    setImportStatus(undefined);
+    setImportStatus(`Ajout de ${release.title}…`);
     try {
-      const response = await fetch("/api/catalog/import", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ artist: selectedArtist, release: selectedRelease }),
-      });
-      const body = (await response.json().catch(() => null)) as {
-        albumId?: string;
-        addedTracks?: number;
-        existingTracks?: number;
-        albumCreated?: boolean;
-        message?: string;
-        error?: string;
-      } | null;
-      if (!response.ok || !body?.albumId) throw new Error(body?.message ?? body?.error ?? "Import impossible");
-
-      const imported = (body.addedTracks ?? 0) > 0 || Boolean(body.albumCreated);
-      setImportStatus(imported ? "Album ajouté · recherche automatique des sources…" : "Album déjà présent · recherche des sources manquantes…");
-
-      let sourceSummary = "aucune source ajoutée";
-      try {
-        const resolveResponse = await fetch("/api/albums/resolve-sources", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ albumId: body.albumId }),
-        });
-        const resolveBody = (await resolveResponse.json().catch(() => null)) as { addedSources?: number; matchedTracks?: number; message?: string; error?: string } | null;
-        if (resolveResponse.ok && resolveBody) {
-          sourceSummary = `${resolveBody.matchedTracks ?? 0} piste${(resolveBody.matchedTracks ?? 0) > 1 ? "s" : ""} reliée${(resolveBody.matchedTracks ?? 0) > 1 ? "s" : ""} · ${resolveBody.addedSources ?? 0} source${(resolveBody.addedSources ?? 0) > 1 ? "s" : ""}`;
-        } else {
-          sourceSummary = "sources encore non résolues";
-        }
-      } catch {
-        sourceSummary = "sources encore non résolues";
-      }
-
-      const trackSummary = imported
-        ? `${body.addedTracks ?? 0} piste${(body.addedTracks ?? 0) > 1 ? "s" : ""} créée${(body.addedTracks ?? 0) > 1 ? "s" : ""}`
-        : `${body.existingTracks ?? selectedRelease.tracks.length} pistes reconnues`;
-      setImportStatus(`✓ ${imported ? "Album ajouté" : "Album déjà présent"} · ${trackSummary} · ${sourceSummary}`);
-      window.history.replaceState(null, "", "/?section=albums");
-      window.setTimeout(() => window.location.reload(), 1300);
+      const body = await catalogRequest(`/api/catalog?releaseGroupId=${encodeURIComponent(release.id)}`);
+      if (body.mode !== "release" || !body.release) throw new Error("Aucune édition officielle exploitable pour cet album.");
+      await persistAlbum({ ...body.release, genres: release.genres });
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Import impossible");
     } finally {
-      setImporting(false);
+      setReleaseBusy(release.id, false);
     }
+  }
+
+  async function importSelectedAlbum() {
+    if (!selectedRelease || importingReleaseIds.includes(selectedRelease.releaseGroupId) || addedReleaseIds.includes(selectedRelease.releaseGroupId)) return;
+    setReleaseBusy(selectedRelease.releaseGroupId, true);
+    setError(undefined);
+    setImportStatus(`Ajout de ${selectedRelease.title}…`);
+    try {
+      await persistAlbum(selectedRelease);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Import impossible");
+    } finally {
+      setReleaseBusy(selectedRelease.releaseGroupId, false);
+    }
+  }
+
+  function previewTrack(track: CatalogTrack) {
+    window.dispatchEvent(new CustomEvent("streamall:preview-catalog-track", {
+      detail: { artistName: track.artistName, title: track.title },
+    }));
   }
 
   return (
@@ -207,14 +253,14 @@ export function CatalogBrowser() {
         <span>▦</span> Albums / EP
       </button>
 
-      {open ? <div className="catalog-backdrop" onMouseDown={() => setOpen(false)}>
+      {open ? <div className="catalog-backdrop" onMouseDown={closeBrowser}>
         <section className="catalog-browser" role="dialog" aria-modal="true" aria-label="Catalogue albums et EP" onMouseDown={(event) => event.stopPropagation()}>
           <header className="catalog-header">
             <div>
               <p>CATALOGUE CANONIQUE · MUSICBRAINZ</p>
               <h2>Albums & EP</h2>
             </div>
-            <button type="button" onClick={() => setOpen(false)} aria-label="Fermer">×</button>
+            <button type="button" onClick={closeBrowser} aria-label="Fermer">×</button>
           </header>
 
           <form className="catalog-search" onSubmit={(event) => void searchArtists(event)}>
@@ -237,10 +283,10 @@ export function CatalogBrowser() {
                       <span>{selectedRelease.tracks.length} piste{selectedRelease.tracks.length > 1 ? "s" : ""}</span>
                       {selectedRelease.genres.length ? <div className="catalog-genre-list">{selectedRelease.genres.map((genre) => <span key={genre}>{genre}</span>)}</div> : null}
                       <div className="catalog-release-actions">
-                        <button className="catalog-import-button" type="button" disabled={importing} onClick={() => void importAlbum()}>
-                          {importing ? "Ajout & sources…" : "+ Ajouter l’album complet"}
+                        <button className="catalog-import-button" type="button" disabled={importingReleaseIds.includes(selectedRelease.releaseGroupId) || addedReleaseIds.includes(selectedRelease.releaseGroupId)} onClick={() => void importSelectedAlbum()}>
+                          {addedReleaseIds.includes(selectedRelease.releaseGroupId) ? "✓ Ajouté" : importingReleaseIds.includes(selectedRelease.releaseGroupId) ? "Ajout…" : "+ Ajouter l’album"}
                         </button>
-                        <small>Crée l’album et sa tracklist, conserve les genres MusicBrainz puis tente une première résolution automatique des sources.</small>
+                        <small>L’album reste affiché après l’ajout ; les sources de lecture sont recherchées automatiquement en interne.</small>
                       </div>
                       {importStatus ? <div className="catalog-import-status">{importStatus}</div> : null}
                     </div>
@@ -250,6 +296,7 @@ export function CatalogBrowser() {
                       <span className="catalog-track-number">{track.number ?? track.position}</span>
                       <span><strong>{track.title}</strong><small>{track.artistName}</small></span>
                       <span className="catalog-track-duration">{formatDuration(track.lengthMs)}</span>
+                      <button className="catalog-track-preview" type="button" onClick={() => previewTrack(track)} title={`Préécouter ${track.title}`}>▶ Écouter</button>
                     </div>)}
                   </div>
                 </> : <div className="catalog-empty">Aucune édition officielle exploitable trouvée pour cette sortie.</div>}
@@ -261,11 +308,26 @@ export function CatalogBrowser() {
                   <div><p>DISCOGRAPHIE</p><h3>{selectedArtist.name}</h3></div>
                   <span>{releases.length} sortie{releases.length > 1 ? "s" : ""}</span>
                 </div>
+                {importStatus ? <div className="catalog-import-status catalog-import-status-grid">{importStatus}</div> : null}
                 <div className="catalog-release-grid">
-                  {releases.map((release) => <button className="catalog-release-card" type="button" key={release.id} onClick={() => void loadRelease(release)}>
-                    <div className="catalog-cover" style={release.artwork ? { backgroundImage: `url("${release.artwork}")` } : undefined}>▦</div>
-                    <span><strong>{release.title}</strong><small>{release.artistName ?? selectedArtist.name} · {yearOf(release.firstReleaseDate)} · {release.primaryType ?? "Release"}{release.secondaryTypes.length ? ` · ${release.secondaryTypes.join(", ")}` : ""}{release.genres.length ? ` · ${release.genres.slice(0, 2).join(", ")}` : ""}</small></span>
-                  </button>)}
+                  {releases.map((release) => {
+                    const busy = importingReleaseIds.includes(release.id);
+                    const added = addedReleaseIds.includes(release.id);
+                    return <article className="catalog-release-card" key={release.id}>
+                      <div className="catalog-release-cover-wrap">
+                        <button className="catalog-release-cover-open" type="button" onClick={() => void loadRelease(release)} aria-label={`Ouvrir ${release.title}`}>
+                          <div className="catalog-cover" style={release.artwork ? { backgroundImage: `url("${release.artwork}")` } : undefined}>▦</div>
+                        </button>
+                        <button className={`catalog-release-add ${added ? "added" : ""}`} type="button" disabled={busy || added} onClick={() => void quickAddRelease(release)}>
+                          {added ? "✓ Ajouté" : busy ? "Ajout…" : "+ Ajouter l’album"}
+                        </button>
+                      </div>
+                      <button className="catalog-release-copy" type="button" onClick={() => void loadRelease(release)}>
+                        <strong>{release.title}</strong>
+                        <small>{release.artistName ?? selectedArtist.name} · {yearOf(release.firstReleaseDate)} · {release.primaryType ?? "Release"}{release.secondaryTypes.length ? ` · ${release.secondaryTypes.join(", ")}` : ""}{release.genres.length ? ` · ${release.genres.slice(0, 2).join(", ")}` : ""}</small>
+                      </button>
+                    </article>;
+                  })}
                   {!loading && !releases.length ? <div className="catalog-empty">Aucun album ou EP trouvé.</div> : null}
                 </div>
               </div>
