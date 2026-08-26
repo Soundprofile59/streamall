@@ -13,9 +13,10 @@ import "./album-info.css";
 import "./v05-controls.css";
 import "./v07-search.css";
 import "./v07-library.css";
+import "./v08-search.css";
 import "./build-badge.css";
 
-const APP_VERSION = "0.7.2";
+const APP_VERSION = "0.8.0";
 
 export const metadata: Metadata = {
   title: "Streamall",
