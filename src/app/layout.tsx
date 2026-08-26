@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { CatalogBrowser } from "@/client/catalog-browser";
+import { MoodMatrixDialog } from "@/client/mood-matrix-dialog";
 import { SearchModeBridge } from "@/client/search-mode-bridge";
 import "./globals.css";
 import "./ui-refresh.css";
@@ -16,9 +17,10 @@ import "./v07-library.css";
 import "./v08-search.css";
 import "./v081-integration.css";
 import "./v082-layout.css";
+import "./v083-mood-matrix.css";
 import "./build-badge.css";
 
-const APP_VERSION = "0.8.2";
+const APP_VERSION = "0.8.3";
 
 export const metadata: Metadata = {
   title: "Streamall",
@@ -41,6 +43,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         {children}
         <CatalogBrowser />
         <SearchModeBridge />
+        <MoodMatrixDialog />
         <div className="build-badge" title={`Streamall ${buildLabel}`} aria-label={`Version Streamall ${buildLabel}`}>
           {buildLabel}
         </div>
