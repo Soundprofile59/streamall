@@ -3,6 +3,8 @@ import type { ExternalSearchResult, LibrarySnapshot, Source, Track } from "@/dom
 import { searchProviders } from "@/server/providers";
 
 const VERSION_MARKERS = /\b(live|remix|remaster(?:ed)?|radio edit|extended|instrumental|cover|acoustic|demo|edit|version)\b/i;
+const MATCH_THRESHOLD = 10;
+const FALLBACK_CONCURRENCY = 4;
 
 function tokenSet(value: string) {
   return new Set(normalizeText(value).split(" ").filter((token) => token.length > 1));
@@ -88,6 +90,39 @@ function makeSource(snapshot: LibrarySnapshot, trackId: string, result: External
   };
 }
 
+function bestCandidatesForTrack(
+  track: Track,
+  candidates: ExternalSearchResult[],
+  snapshot: LibrarySnapshot,
+  albumTitle: string,
+  reservedProviderIds: Set<string>,
+) {
+  const byProvider = new Map<string, { candidate: ExternalSearchResult; score: number }>();
+  for (const candidate of candidates) {
+    const providerKey = `${candidate.provider}:${candidate.externalId}`;
+    if (reservedProviderIds.has(providerKey)) continue;
+    const score = scoreSourceCandidate(track, candidate, snapshot, albumTitle);
+    if (!Number.isFinite(score) || score < MATCH_THRESHOLD) continue;
+    const current = byProvider.get(candidate.provider);
+    if (!current || score > current.score) byProvider.set(candidate.provider, { candidate, score });
+  }
+  return [...byProvider.values()].sort((a, b) => b.score - a.score);
+}
+
+async function mapWithConcurrency<T, R>(items: T[], concurrency: number, operation: (item: T) => Promise<R>) {
+  const results = new Array<R>(items.length);
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (true) {
+      const index = cursor++;
+      if (index >= items.length) return;
+      results[index] = await operation(items[index]!);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
 export async function resolveAlbumSources(snapshot: LibrarySnapshot, albumId: string) {
   const album = snapshot.albums.find((candidate) => candidate.id === albumId);
   if (!album) throw new Error("Album not found");
@@ -102,36 +137,70 @@ export async function resolveAlbumSources(snapshot: LibrarySnapshot, albumId: st
 
   const existingProviderIds = new Set(snapshot.sources.map((source) => `${source.provider}:${source.providerId}`));
   const usedProviderIds = new Set<string>();
+  const reservedProviderIds = new Set([...existingProviderIds, ...usedProviderIds]);
   const additions: Source[] = [];
   const matchedTrackIds = new Set<string>();
+  const alreadyPlayableIds = new Set(
+    tracks
+      .filter((track) => snapshot.sources.some((source) => source.playableItemId === track.id && source.userEnabled))
+      .map((track) => track.id),
+  );
   const now = new Date().toISOString();
 
+  // First pass: one album-level provider search. This is cheap and often resolves
+  // most of a release in one request per provider.
   for (const track of tracks) {
-    const byProvider = new Map<string, { candidate: ExternalSearchResult; score: number }>();
-    for (const candidate of candidates) {
-      const providerKey = `${candidate.provider}:${candidate.externalId}`;
-      if (existingProviderIds.has(providerKey) || usedProviderIds.has(providerKey)) continue;
-      const score = scoreSourceCandidate(track, candidate, snapshot, album.title);
-      if (!Number.isFinite(score) || score < 10) continue;
-      const current = byProvider.get(candidate.provider);
-      if (!current || score > current.score) byProvider.set(candidate.provider, { candidate, score });
-    }
-
-    for (const { candidate, score } of byProvider.values()) {
+    if (alreadyPlayableIds.has(track.id)) continue;
+    const matches = bestCandidatesForTrack(track, candidates, snapshot, album.title, reservedProviderIds);
+    for (const { candidate, score } of matches) {
       const providerKey = `${candidate.provider}:${candidate.externalId}`;
       usedProviderIds.add(providerKey);
+      reservedProviderIds.add(providerKey);
       additions.push(makeSource(snapshot, track.id, candidate, score, now));
       matchedTrackIds.add(track.id);
     }
   }
+
+  // Second pass: unresolved tracks get their own exact YouTube query. Album-level
+  // searches do not reliably surface every song, especially on long albums. A
+  // direct artist + title query greatly improves coverage while the conservative
+  // scorer still rejects obviously wrong versions.
+  const unresolved = tracks.filter((track) => !alreadyPlayableIds.has(track.id) && !matchedTrackIds.has(track.id));
+  const fallbackResults = await mapWithConcurrency(unresolved, FALLBACK_CONCURRENCY, async (track) => {
+    const names = artistNames(track, snapshot);
+    const directQuery = `${names.join(" ")} ${track.title}`.trim();
+    const result = await searchProviders(directQuery, ["youtube"]);
+    return { track, result };
+  });
+
+  const fallbackProviderStatuses = [] as typeof searched.providers;
+  let fallbackCandidateCount = 0;
+  for (const { track, result } of fallbackResults) {
+    fallbackCandidateCount += result.results.length;
+    fallbackProviderStatuses.push(...result.providers);
+    const matches = bestCandidatesForTrack(track, result.results, snapshot, album.title, reservedProviderIds);
+    const best = matches[0];
+    if (!best) continue;
+    const providerKey = `${best.candidate.provider}:${best.candidate.externalId}`;
+    usedProviderIds.add(providerKey);
+    reservedProviderIds.add(providerKey);
+    additions.push(makeSource(snapshot, track.id, best.candidate, best.score, now));
+    matchedTrackIds.add(track.id);
+  }
+
+  const coveredTracks = alreadyPlayableIds.size + matchedTrackIds.size;
+  const unresolvedTracks = Math.max(0, tracks.length - coveredTracks);
 
   if (!additions.length) {
     return {
       snapshot,
       addedSources: 0,
       matchedTracks: 0,
-      searchedCandidates: candidates.length,
-      providers: searched.providers,
+      coveredTracks,
+      unresolvedTracks,
+      totalTracks: tracks.length,
+      searchedCandidates: candidates.length + fallbackCandidateCount,
+      providers: [...searched.providers, ...fallbackProviderStatuses],
     };
   }
 
@@ -144,7 +213,10 @@ export async function resolveAlbumSources(snapshot: LibrarySnapshot, albumId: st
     },
     addedSources: additions.length,
     matchedTracks: matchedTrackIds.size,
-    searchedCandidates: candidates.length,
-    providers: searched.providers,
+    coveredTracks,
+    unresolvedTracks,
+    totalTracks: tracks.length,
+    searchedCandidates: candidates.length + fallbackCandidateCount,
+    providers: [...searched.providers, ...fallbackProviderStatuses],
   };
 }
