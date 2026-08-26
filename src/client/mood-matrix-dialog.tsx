@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   DEFAULT_GENRE_MOOD_MAP,
@@ -59,6 +59,7 @@ export function MoodMatrixDialog() {
   async function showDialog() {
     setOpen(true);
     setLoading(true);
+    setSaving(false);
     setStatus(undefined);
     try {
       const response = await fetch("/api/library");
@@ -193,8 +194,8 @@ export function MoodMatrixDialog() {
             </tr>
           </thead>
           <tbody>
-            {GENRE_MOOD_GROUPS.map((group) => <>
-              <tr className="mood-family-row" key={`${group.label}:heading`}><th colSpan={STREAMALL_MOODS.length + 1}>{group.label}</th></tr>
+            {GENRE_MOOD_GROUPS.map((group) => <Fragment key={group.label}>
+              <tr className="mood-family-row"><th colSpan={STREAMALL_MOODS.length + 1}>{group.label}</th></tr>
               {group.rows.map((row) => <tr key={row.genre}>
                 <th>{row.genre}</th>
                 {STREAMALL_MOODS.map((mood) => {
@@ -204,7 +205,7 @@ export function MoodMatrixDialog() {
                   </td>;
                 })}
               </tr>)}
-            </>)}
+            </Fragment>)}
             {customRows.length ? <>
               <tr className="mood-family-row"><th colSpan={STREAMALL_MOODS.length + 1}>Genres détectés / ajoutés</th></tr>
               {customRows.map((genre) => <tr key={genre}>
