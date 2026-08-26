@@ -1,3 +1,5 @@
+import { DEFAULT_GENRE_MOOD_MAP, STREAMALL_MOODS, type GenreMoodMap } from "./mood-map";
+
 export const SCHEMA_VERSION = 1 as const;
 
 export type Provider =
@@ -115,6 +117,8 @@ export interface Settings {
   volume: number;
   providerPriority: Provider[];
   random: RandomSettings;
+  /** User-editable reference table used to infer moods from canonical genres. */
+  moodMap?: GenreMoodMap;
 }
 
 export interface LibrarySnapshot {
@@ -183,6 +187,7 @@ export const DEFAULT_SETTINGS: Settings = {
     rediscoveryStrength: 1,
     mixFrequency: "RARE",
   },
+  moodMap: structuredClone(DEFAULT_GENRE_MOOD_MAP),
 };
 
 export function emptyLibrary(now = new Date().toISOString()): LibrarySnapshot {
@@ -196,7 +201,7 @@ export function emptyLibrary(now = new Date().toISOString()): LibrarySnapshot {
     mixes: [],
     sources: [],
     genres: [],
-    moods: ["Zen", "Cool", "Groovy", "Énergique"],
+    moods: [...STREAMALL_MOODS],
     history: [],
     settings: structuredClone(DEFAULT_SETTINGS),
   };
