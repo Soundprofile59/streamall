@@ -60,8 +60,7 @@ export function AlbumDeleteShortcut() {
     function installButtons() {
       if (disposed) return;
       document.querySelectorAll<HTMLElement>(".album-tile").forEach((tile) => {
-        const actions = tile.querySelector<HTMLElement>(".album-tile-actions");
-        if (!actions || actions.querySelector(".album-delete-shortcut")) return;
+        if (tile.querySelector(":scope > .album-delete-shortcut")) return;
         const button = document.createElement("button");
         button.type = "button";
         button.className = "album-delete-shortcut";
@@ -73,7 +72,7 @@ export function AlbumDeleteShortcut() {
           event.stopPropagation();
           void removeAlbum(tile);
         });
-        actions.appendChild(button);
+        tile.appendChild(button);
       });
     }
 
