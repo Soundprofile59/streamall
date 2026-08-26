@@ -61,6 +61,11 @@ export function AlbumDeleteShortcut() {
       if (disposed) return;
       document.querySelectorAll<HTMLElement>(".album-tile").forEach((tile) => {
         if (tile.querySelector(":scope > .album-delete-shortcut")) return;
+
+        // The delete affordance belongs to the cover itself, not to the action capsule.
+        // Force a positioning context here so later layout CSS cannot push it below the card.
+        tile.style.position = "relative";
+
         const button = document.createElement("button");
         button.type = "button";
         button.className = "album-delete-shortcut";
@@ -72,7 +77,10 @@ export function AlbumDeleteShortcut() {
           event.stopPropagation();
           void removeAlbum(tile);
         });
-        tile.appendChild(button);
+
+        // Insert it before the cover button. Even without CSS it can no longer fall
+        // underneath the album metadata/actions at the bottom of the card.
+        tile.insertBefore(button, tile.firstChild);
       });
     }
 
