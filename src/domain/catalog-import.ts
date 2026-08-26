@@ -1,5 +1,6 @@
 import type { CatalogArtist, CatalogReleaseDetail } from "./catalog";
 import { normalizeText, streamallId } from "./library";
+import { moodsForGenres, STREAMALL_MOODS } from "./mood-map";
 import type { Album, Artist, LibrarySnapshot, Track } from "./types";
 
 function entity<T extends object>(id: string, value: T, now: string) {
@@ -26,6 +27,10 @@ function mergeGenres(left: string[], right: string[]) {
   return cleanGenres([...left, ...right]);
 }
 
+function mergeMoodRegistry(existing: string[]) {
+  return [...STREAMALL_MOODS, ...existing.filter((mood) => !STREAMALL_MOODS.includes(mood as (typeof STREAMALL_MOODS)[number]))];
+}
+
 export interface CatalogImportResult {
   snapshot: LibrarySnapshot;
   albumId: string;
@@ -45,6 +50,7 @@ export function importCatalogRelease(
   const albums = [...snapshot.albums];
   const tracks = [...snapshot.tracks];
   const releaseGenres = cleanGenres(release.genres ?? []);
+  const releaseMoods = moodsForGenres(releaseGenres, snapshot.settings.moodMap);
 
   const artistName = catalogArtist.name.trim() || "Artiste inconnu";
   let artist = artists.find((candidate) => normalizeText(candidate.name) === normalizeText(artistName));
@@ -108,12 +114,11 @@ export function importCatalogRelease(
     if (duplicateIndex >= 0) {
       existingTracks += 1;
       const duplicate = tracks[duplicateIndex]!;
-      if (releaseGenres.length) {
-        const nextGenres = mergeGenres(duplicate.genres, releaseGenres);
-        if (nextGenres.join("\u0000") !== duplicate.genres.join("\u0000")) {
-          tracks[duplicateIndex] = { ...duplicate, genres: nextGenres, revision: duplicate.revision + 1, updatedAt: now };
-          tracksUpdated += 1;
-        }
+      const nextGenres = releaseGenres.length ? mergeGenres(duplicate.genres, releaseGenres) : duplicate.genres;
+      const nextMoods = duplicate.moods.length ? duplicate.moods : releaseMoods;
+      if (nextGenres.join("\u0000") !== duplicate.genres.join("\u0000") || nextMoods.join("\u0000") !== duplicate.moods.join("\u0000")) {
+        tracks[duplicateIndex] = { ...duplicate, genres: nextGenres, moods: nextMoods, revision: duplicate.revision + 1, updatedAt: now };
+        tracksUpdated += 1;
       }
       continue;
     }
@@ -144,7 +149,7 @@ export function importCatalogRelease(
         duration: catalogTrack.lengthMs ? catalogTrack.lengthMs / 1000 : undefined,
         artwork: release.artwork,
         genres: releaseGenres,
-        moods: [],
+        moods: releaseMoods,
         favorite: false,
         frequencyPreference: "NORMAL",
         disabled: false,
@@ -156,8 +161,10 @@ export function importCatalogRelease(
   }
 
   const genres = mergeGenres(snapshot.genres, releaseGenres);
+  const moods = mergeMoodRegistry(snapshot.moods);
   const genresUpdated = genres.join("\u0000") !== snapshot.genres.join("\u0000");
-  const changed = artistCreated || albumCreated || albumUpdated || addedTracks > 0 || tracksUpdated > 0 || genresUpdated;
+  const moodsUpdated = moods.join("\u0000") !== snapshot.moods.join("\u0000");
+  const changed = artistCreated || albumCreated || albumUpdated || addedTracks > 0 || tracksUpdated > 0 || genresUpdated || moodsUpdated;
 
   return {
     albumId: album.id,
@@ -174,6 +181,7 @@ export function importCatalogRelease(
           albums,
           tracks,
           genres,
+          moods,
         }
       : snapshot,
   };
