@@ -38,6 +38,13 @@ function albumArtists(snapshot: LibrarySnapshot, artistIds: string[]) {
     .join(", ");
 }
 
+function albumMatchesTileMeta(snapshot: LibrarySnapshot, album: Album, meta: string) {
+  const artists = albumArtists(snapshot, album.artistIds);
+  if (!artists || !normalized(meta).startsWith(normalized(artists))) return false;
+  if (!album.year) return true;
+  return normalized(meta).startsWith(normalized(`${artists} · ${album.year}`));
+}
+
 function SimilarityDialog({ selection, onClose }: { selection: Selection; onClose: () => void }) {
   const [data, setData] = useState<SimilarityResponse>();
   const [loading, setLoading] = useState(true);
@@ -77,9 +84,9 @@ function SimilarityDialog({ selection, onClose }: { selection: Selection; onClos
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  function openArtist(name: string) {
+  function openArtist(artist: SimilarArtistResult) {
     onClose();
-    window.dispatchEvent(new CustomEvent("streamall:open-catalog-artist", { detail: { name } }));
+    window.dispatchEvent(new CustomEvent("streamall:open-catalog-artist", { detail: { name: artist.name, artistMbid: artist.artistMbid } }));
   }
 
   const mode = data?.seed.strategy === "album+artist"
@@ -105,12 +112,12 @@ function SimilarityDialog({ selection, onClose }: { selection: Selection; onClos
         <div className="similarity-results">
           {data.results.map((artist, index) => <article className="similarity-row" key={artist.artistMbid ?? `${artist.name}:${index}`}>
             <span className="similarity-rank">{String(index + 1).padStart(2, "0")}</span>
-            <button className="similarity-artist" type="button" onClick={() => openArtist(artist.name)} title={`Ouvrir la discographie de ${artist.name}`}>
+            <button className="similarity-artist" type="button" onClick={() => openArtist(artist)} title={`Ouvrir la discographie de ${artist.name}`}>
               <strong>{artist.name}</strong>
               <small>{artist.signals.includes("album") ? "proximité album" : ""}{artist.signals.includes("album") && artist.signals.includes("artist") ? " + " : ""}{artist.signals.includes("artist") ? "proximité artiste" : ""}</small>
             </button>
             <div className="similarity-score" title={`Album ${artist.albumScore}/100 · Artiste ${artist.artistScore}/100`}><strong>{artist.score}</strong><small>/100</small></div>
-            <button className="similarity-open" type="button" onClick={() => openArtist(artist.name)}>Discographie →</button>
+            <button className="similarity-open" type="button" onClick={() => openArtist(artist)}>Discographie →</button>
           </article>)}
           {!data.results.length ? <div className="similarity-empty">ListenBrainz n’a pas encore assez de données pour cette recherche.</div> : null}
         </div>
@@ -146,10 +153,7 @@ export function AlbumSimilarityShortcut() {
         const candidates = snapshot.albums.filter((album) => normalized(album.title) === normalized(title));
         const album = candidates.length === 1
           ? candidates[0]
-          : candidates.find((candidate) => {
-              const artists = albumArtists(snapshot, candidate.artistIds);
-              return artists && normalized(meta).startsWith(normalized(artists));
-            });
+          : candidates.find((candidate) => albumMatchesTileMeta(snapshot, candidate, meta));
         if (!album) throw new Error(`Impossible d’identifier précisément l’album « ${title} ».`);
         const artistName = albumArtists(snapshot, album.artistIds) || "Artiste inconnu";
         if (!disposed) setSelection({ album, artistName });
