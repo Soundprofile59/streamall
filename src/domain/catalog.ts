@@ -25,6 +25,10 @@ export interface CatalogTrack {
   title: string;
   artistName: string;
   lengthMs?: number;
+  /** MusicBrainz recording MBID, used by album-aware similarity search. */
+  recordingId?: string;
+  /** MusicBrainz artist MBIDs credited on the recording. */
+  artistIds?: string[];
 }
 
 export interface CatalogReleaseDetail {

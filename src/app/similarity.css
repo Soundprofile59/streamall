@@ -1,0 +1,214 @@
+.album-similarity-shortcut {
+  position: static !important;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #343d43;
+  border-radius: 50%;
+  background: #171b20;
+  color: #aeb6bc;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+  font-size: 9px;
+  font-weight: 900;
+}
+
+.album-similarity-shortcut:hover,
+.album-similarity-shortcut:focus-visible {
+  border-color: #647b40;
+  color: #c8ff67;
+  outline: none;
+}
+
+.similarity-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1400;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(3, 5, 7, .78);
+  backdrop-filter: blur(9px);
+}
+
+.similarity-dialog {
+  width: min(780px, 96vw);
+  max-height: min(760px, 92vh);
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  overflow: hidden;
+  padding: 18px;
+}
+
+.similarity-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 34px;
+  gap: 14px;
+  align-items: start;
+  padding-bottom: 13px;
+  border-bottom: 1px solid #283038;
+}
+
+.similarity-header h2 {
+  margin: 3px 0 4px;
+  font-size: 24px;
+  letter-spacing: -.035em;
+}
+
+.similarity-header p:not(.eyebrow) {
+  margin: 0;
+  color: #929ca4;
+  font-size: 10px;
+}
+
+.similarity-header > button {
+  width: 34px;
+  height: 34px;
+  border: 1px solid #343c43;
+  border-radius: 50%;
+  background: #171b20;
+  color: #d8dde1;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+  font-size: 20px;
+}
+
+.similarity-mode {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: center;
+  margin: 11px 0 8px;
+  padding: 8px 10px;
+  border: 1px solid #2d3830;
+  border-radius: 8px;
+  background: rgba(187, 255, 74, .035);
+}
+
+.similarity-mode span {
+  color: #c8ff67;
+  font-size: 8px;
+  font-weight: 850;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.similarity-mode small {
+  color: #748078;
+  font-size: 8px;
+  text-align: right;
+}
+
+.similarity-results {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.similarity-row {
+  min-height: 49px;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 58px 100px;
+  gap: 8px;
+  align-items: center;
+  border-bottom: 1px solid #20272d;
+  padding: 5px 3px;
+}
+
+.similarity-row:hover { background: rgba(187, 255, 74, .025); }
+.similarity-rank { color: #5f6971; font-size: 8px; font-variant-numeric: tabular-nums; }
+
+.similarity-artist {
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+
+.similarity-artist strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+}
+
+.similarity-artist small {
+  display: block;
+  margin-top: 2px;
+  color: #747f87;
+  font-size: 7px;
+}
+
+.similarity-artist:hover strong { color: #c8ff67; }
+
+.similarity-score {
+  display: flex;
+  justify-content: flex-end;
+  align-items: baseline;
+  gap: 2px;
+  color: #c8ff67;
+  font-variant-numeric: tabular-nums;
+}
+
+.similarity-score strong { font-size: 14px; }
+.similarity-score small { color: #66716f; font-size: 7px; }
+
+.similarity-open {
+  border: 1px solid #354039;
+  border-radius: 7px;
+  background: #151a18;
+  color: #bdc7c0;
+  padding: 7px 8px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 7px;
+}
+
+.similarity-open:hover { border-color: #688547; color: #c8ff67; }
+
+.similarity-loading,
+.similarity-error,
+.similarity-empty {
+  min-height: 190px;
+  display: grid;
+  place-content: center;
+  gap: 6px;
+  text-align: center;
+  color: #8b969d;
+}
+
+.similarity-loading strong,
+.similarity-error strong { color: #dde3df; font-size: 11px; }
+.similarity-loading span,
+.similarity-error span { max-width: 430px; font-size: 8px; line-height: 1.5; }
+.similarity-error strong { color: #eea1a1; }
+.similarity-empty { min-height: 140px; font-size: 9px; }
+
+.similarity-footer {
+  margin-top: 9px;
+  padding-top: 9px;
+  border-top: 1px solid #252d33;
+  color: #626d74;
+  font-size: 7px;
+  line-height: 1.45;
+}
+
+@media (max-width: 650px) {
+  .similarity-backdrop { padding: 6px; }
+  .similarity-dialog { width: 100%; max-height: 96vh; padding: 13px; }
+  .similarity-header h2 { font-size: 20px; }
+  .similarity-mode { align-items: flex-start; flex-direction: column; gap: 4px; }
+  .similarity-mode small { text-align: left; }
+  .similarity-row { grid-template-columns: 24px minmax(0, 1fr) 52px; }
+  .similarity-open { display: none; }
+}

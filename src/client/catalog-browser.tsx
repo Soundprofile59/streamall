@@ -65,11 +65,20 @@ export function CatalogBrowser() {
 
   useEffect(() => {
     const onLibraryArtist = (event: Event) => {
-      const name = (event as CustomEvent<{ name?: string }>).detail?.name?.trim();
+      const detail = (event as CustomEvent<{ name?: string; artistMbid?: string }>).detail;
+      const name = detail?.name?.trim();
+      const artistMbid = detail?.artistMbid?.trim();
       if (!name || !activateBrowser()) return;
-      setQuery(name); setLoading(true); setError(undefined); setImportStatus(undefined); setSelectedRelease(undefined); setReleases([]);
+      setQuery(name); setLoading(true); setError(undefined); setImportStatus(undefined); setSelectedRelease(undefined); setReleases([]); setSelectedArtist(undefined); setArtists([]);
       void (async () => {
         try {
+          if (artistMbid) {
+            const artist: CatalogArtist = { id: artistMbid, name };
+            setArtists([artist]);
+            setSelectedArtist(artist);
+            const releaseBody = await catalogRequest(`/api/catalog?artistId=${encodeURIComponent(artist.id)}`); if (releaseBody.mode === "releases") setReleases(releaseBody.releases);
+            return;
+          }
           const artistBody = await catalogRequest(`/api/catalog?q=${encodeURIComponent(name)}`); if (artistBody.mode !== "artists") return;
           setArtists(artistBody.artists);
           const exact = artistBody.artists.find((artist) => artist.name.localeCompare(name, undefined, { sensitivity: "base" }) === 0);
