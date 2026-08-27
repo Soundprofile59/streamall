@@ -4,6 +4,7 @@ import { libraryFixture, sourceFixture } from "@/test/fixtures";
 
 class FakeAdapter implements PlaybackAdapter {
   event?: (event: ProviderEvent) => void;
+  volumes: number[] = [];
   constructor(private readonly fails = false) {}
   async load(_source: ReturnType<typeof sourceFixture>, onEvent: (event: ProviderEvent) => void) {
     this.event = onEvent;
@@ -11,6 +12,7 @@ class FakeAdapter implements PlaybackAdapter {
   }
   async play() { this.event?.({ type: "playing" }); }
   async pause() { this.event?.({ type: "paused" }); }
+  async setVolume(volume: number) { this.volumes.push(volume); }
   async stop() {}
 }
 
@@ -72,5 +74,24 @@ describe("PlayerOrchestrator race safety", () => {
     await orchestrator.load(libraryFixture(1).tracks[0]!, [sourceFixture("source_1")]);
 
     expect(orchestrator.snapshot.state).toBe("READY");
+  });
+
+  it("reapplies the chosen volume when the source or track changes", async () => {
+    const adapterA = new FakeAdapter();
+    const adapterB = new FakeAdapter();
+    const orchestrator = new PlayerOrchestrator({
+      adapterFor: (source) => source.id === "source_1" ? adapterA : adapterB,
+      context,
+      onEnded: vi.fn(),
+      onSourceFailure: vi.fn(),
+    });
+
+    await orchestrator.setVolume(0.37);
+    const item = libraryFixture(1).tracks[0]!;
+    await orchestrator.load(item, [sourceFixture("source_1")]);
+    await orchestrator.load(item, [sourceFixture("source_2")]);
+
+    expect(adapterA.volumes.at(-1)).toBe(0.37);
+    expect(adapterB.volumes.at(-1)).toBe(0.37);
   });
 });

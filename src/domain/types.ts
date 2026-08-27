@@ -1,3 +1,5 @@
+import { DEFAULT_GENRE_MOOD_MAP, STREAMALL_MOODS, type GenreMoodMap } from "./mood-map";
+
 export const SCHEMA_VERSION = 1 as const;
 
 export type Provider =
@@ -36,6 +38,12 @@ export interface Album extends EntityBase {
   artistIds: string[];
   artwork?: string;
   year?: number;
+  /** Personal preference: 1 = very rarely, 3 = neutral, 5 = very often. Undefined is neutral/unrated. */
+  rating?: number;
+  /** Legacy album bookmark kept for backward compatibility with early V1 snapshots. */
+  favorite?: boolean;
+  /** Canonical genre labels learned from metadata providers such as MusicBrainz. */
+  genres?: string[];
 }
 
 export interface PlayableBase extends EntityBase {
@@ -46,6 +54,9 @@ export interface PlayableBase extends EntityBase {
   genres: string[];
   moods: string[];
   energy?: number;
+  /** Personal preference: 1 = very rarely, 3 = neutral, 5 = very often. Undefined is neutral/unrated. */
+  rating?: number;
+  /** Legacy V1 preference fields kept temporarily for backward-compatible imports. */
   favorite: boolean;
   frequencyPreference: FrequencyPreference;
   disabled: boolean;
@@ -106,6 +117,8 @@ export interface Settings {
   volume: number;
   providerPriority: Provider[];
   random: RandomSettings;
+  /** User-editable reference table used to infer moods from canonical genres. */
+  moodMap?: GenreMoodMap;
 }
 
 export interface LibrarySnapshot {
@@ -174,6 +187,7 @@ export const DEFAULT_SETTINGS: Settings = {
     rediscoveryStrength: 1,
     mixFrequency: "RARE",
   },
+  moodMap: structuredClone(DEFAULT_GENRE_MOOD_MAP),
 };
 
 export function emptyLibrary(now = new Date().toISOString()): LibrarySnapshot {
@@ -186,8 +200,8 @@ export function emptyLibrary(now = new Date().toISOString()): LibrarySnapshot {
     tracks: [],
     mixes: [],
     sources: [],
-    genres: ["Dub", "Reggae", "Hip-hop", "Trip-hop", "Drum'n'bass", "Electro", "Funk", "Soul", "Jazz", "Rock"],
-    moods: ["Zen", "Cool", "Groovy", "Énergique"],
+    genres: [],
+    moods: [...STREAMALL_MOODS],
     history: [],
     settings: structuredClone(DEFAULT_SETTINGS),
   };

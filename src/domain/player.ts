@@ -41,6 +41,7 @@ export class PlayerOrchestrator {
   #sources: Source[] = [];
   #listeners = new Set<(snapshot: PlayerSnapshot) => void>();
   #endedGeneration?: number;
+  #volume = 0.8;
   #snapshot: PlayerSnapshot = { state: "IDLE", position: 0 };
 
   constructor(private readonly dependencies: PlayerDependencies) {}
@@ -83,6 +84,7 @@ export class PlayerOrchestrator {
           return;
         }
         this.#adapter = adapter;
+        if (adapter.setVolume) await adapter.setVolume(this.#volume);
         this.#emit({ state: "READY", source });
         if (autoplay) {
           try {
@@ -122,7 +124,8 @@ export class PlayerOrchestrator {
   }
 
   async setVolume(volume: number) {
-    if (this.#adapter?.setVolume) await this.#adapter.setVolume(Math.max(0, Math.min(1, volume)));
+    this.#volume = Math.max(0, Math.min(1, volume));
+    if (this.#adapter?.setVolume) await this.#adapter.setVolume(this.#volume);
   }
 
   async stop() {

@@ -16,6 +16,7 @@ const playableBase = entityBase.extend({
   genres: z.array(z.string().min(1)),
   moods: z.array(z.string().min(1)),
   energy: z.number().min(1).max(5).optional(),
+  rating: z.number().int().min(1).max(5).optional(),
   favorite: z.boolean(),
   frequencyPreference: z.enum(["LESS", "NORMAL", "MORE"]),
   disabled: z.boolean(),
@@ -27,6 +28,9 @@ export const albumSchema = entityBase.extend({
   artistIds: z.array(z.string()),
   artwork: z.url().optional(),
   year: z.number().int().optional(),
+  rating: z.number().int().min(1).max(5).optional(),
+  favorite: z.boolean().optional(),
+  genres: z.array(z.string().min(1)).optional(),
 });
 export const trackSchema = playableBase.extend({
   kind: z.literal("track"),
@@ -74,6 +78,7 @@ export const settingsSchema = z.object({
     rediscoveryStrength: z.number().min(0).max(5),
     mixFrequency: z.enum(["NEVER", "RARE", "NORMAL", "FREQUENT"]),
   }),
+  moodMap: z.record(z.string().min(1), z.array(z.string().min(1))).optional(),
 });
 
 export const librarySnapshotSchema = z.object({

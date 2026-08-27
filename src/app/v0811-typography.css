@@ -1,0 +1,112 @@
+/* v0.8.11 — second readability pass: enlarge only micro/small text, keep major headings unchanged */
+
+/* Global micro labels */
+.eyebrow { font-size: 10.5px; }
+.save-indicator { font-size: 11px; }
+.library-nav > button span { font-size: 12px; }
+.nav-actions a,
+.nav-actions button,
+.file-action { font-size: 12px; }
+
+/* Main library rows */
+.library-row small { font-size: 11px; }
+.row-play,
+.row-tags { font-size: 11px; }
+.library-row > button,
+.result-card button,
+.sources button { font-size: 11px; }
+
+/* Queue */
+.queue-row strong { font-size: 11.5px; }
+.queue-row small { font-size: 11px; line-height: 1.4; }
+.queue-row > span { font-size: 10.5px; }
+.empty-queue { font-size: 11px; line-height: 1.5; }
+.queue-current-indicator { font-size: 11px; }
+
+/* Search / provider results */
+.provider { font-size: 9.5px; }
+.result-card p { font-size: 11px; }
+.text-button { font-size: 12px; }
+
+/* Player supporting information only */
+.player-details > p:not(.eyebrow):not(.player-error) { font-size: 12.5px; }
+.time { font-size: 10.5px; }
+.random-panel label,
+.editor-drawer > label { font-size: 11px; }
+.random-panel select,
+.editor-drawer select { font-size: 11.5px; }
+.notice { font-size: 10.5px; line-height: 1.5; }
+
+/* Album mosaic: keep album titles unchanged */
+.collection-summary { font-size: 11px; }
+.album-tile-copy small { font-size: 10.5px; line-height: 1.4; }
+.album-tile-genres { font-size: 10.5px; }
+.album-hover-info strong { font-size: 11px; }
+.album-hover-info small { font-size: 10px; }
+.album-hover-info > span { font-size: 11px; }
+
+/* Album detail */
+.collection-back { font-size: 11px; }
+.album-detail-copy > p:not(.eyebrow) { font-size: 12px; }
+.album-detail-stats span { font-size: 10px; }
+.album-play-all,
+.album-queue-button,
+.album-info-button { font-size: 11px; }
+.album-track-columns { font-size: 9.5px; }
+.album-track-number,
+.album-track-duration { font-size: 10px; }
+.album-track-title strong { font-size: 11.5px; }
+.album-track-title small { font-size: 10.5px; line-height: 1.4; }
+.album-source-state { font-size: 10px; }
+.album-track-action { font-size: 10.5px; }
+.album-track-action.find { font-size: 10px; }
+.album-library-track.rich .collection-inline-select { font-size: 11px; }
+
+/* Main track / artist collections */
+.collection-track-copy strong { font-size: 11.5px; }
+.collection-track-copy small { font-size: 10.5px; }
+.collection-track-meta { font-size: 10.5px; }
+.collection-row-play,
+.collection-find-source { font-size: 10.5px; }
+.artist-card strong { font-size: 11.5px; }
+.artist-card small { font-size: 10.5px; }
+.artist-card button { font-size: 10px; }
+
+/* Catalog */
+.catalog-header p,
+.catalog-subhead p,
+.catalog-release-hero p { font-size: 10.5px; }
+.catalog-search button { font-size: 11px; }
+.catalog-error { font-size: 11px; }
+.catalog-subhead > span { font-size: 11px; }
+.catalog-back { font-size: 11px; }
+.catalog-artist-list small,
+.catalog-release-card small,
+.catalog-track small { font-size: 11px; line-height: 1.4; }
+.catalog-artist-list > button > span:last-child,
+.catalog-release-hero span,
+.catalog-track-number,
+.catalog-track-duration { font-size: 11px; }
+.catalog-track button { font-size: 11px; }
+.catalog-empty { font-size: 11px; }
+.catalog-footer { font-size: 10.5px; }
+
+/* Mood matrix */
+.mood-matrix-launcher { font-size: 12px; }
+.mood-matrix-header p:not(.eyebrow) { font-size: 11.5px; }
+.mood-matrix-add input { font-size: 11.5px; }
+.mood-matrix-add button,
+.mood-matrix-reset,
+.mood-matrix-save { font-size: 11px; }
+.mood-matrix-table { font-size: 11px; }
+.mood-matrix-table thead th { font-size: 10px; }
+.mood-family-row th { font-size: 10px; }
+.mood-matrix-footer strong { font-size: 11px; }
+.mood-matrix-footer span,
+.mood-matrix-footer em { font-size: 10.5px; }
+
+/* Metadata drawer */
+.editor-drawer fieldset label { font-size: 11px; }
+.feedback-actions button,
+.close-editor { font-size: 11px; }
+.sources { font-size: 11px; }

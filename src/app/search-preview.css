@@ -1,0 +1,24 @@
+/* Search preview states */
+.result-card.previewing {
+  border-color: rgba(187, 255, 74, .48);
+  background: rgba(187, 255, 74, .055);
+  box-shadow: inset 2px 0 rgba(187, 255, 74, .78);
+}
+
+.result-actions .preview-button.active {
+  border-color: rgba(187, 255, 74, .58);
+  color: var(--acid);
+  background: rgba(187, 255, 74, .08);
+}
+
+.result-actions button:disabled {
+  cursor: default;
+  opacity: .5;
+  transform: none !important;
+}
+
+@media (max-width: 700px) {
+  .result-actions {
+    flex-wrap: wrap;
+  }
+}

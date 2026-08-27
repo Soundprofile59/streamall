@@ -143,6 +143,29 @@ export function removeSource(snapshot: LibrarySnapshot, sourceId: string): Libra
   };
 }
 
+export function deletePlayableItem(snapshot: LibrarySnapshot, playableItemId: string): LibrarySnapshot {
+  const item = allPlayable(snapshot).find((candidate) => candidate.id === playableItemId);
+  if (!item) return snapshot;
+
+  const remainingTracks = snapshot.tracks.filter((track) => track.id !== playableItemId);
+  const remainingMixes = snapshot.mixes.filter((mix) => mix.id !== playableItemId);
+  const remainingPlayable = [...remainingTracks, ...remainingMixes];
+  const usedArtistIds = new Set(remainingPlayable.flatMap((candidate) => candidate.artistIds));
+  const usedAlbumIds = new Set(remainingTracks.flatMap((track) => (track.albumId ? [track.albumId] : [])));
+
+  return {
+    ...snapshot,
+    revision: snapshot.revision + 1,
+    updatedAt: new Date().toISOString(),
+    tracks: remainingTracks,
+    mixes: remainingMixes,
+    sources: snapshot.sources.filter((source) => source.playableItemId !== playableItemId),
+    history: snapshot.history.filter((entry) => entry.itemId !== playableItemId),
+    albums: snapshot.albums.filter((album) => usedAlbumIds.has(album.id)),
+    artists: snapshot.artists.filter((artist) => usedArtistIds.has(artist.id)),
+  };
+}
+
 export function allPlayable(snapshot: LibrarySnapshot): PlayableItem[] {
   return [...snapshot.tracks, ...snapshot.mixes];
 }

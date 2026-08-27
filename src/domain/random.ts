@@ -31,7 +31,7 @@ function matchesFilters(item: PlayableItem, filters: RandomFilters) {
   return true;
 }
 
-function hardCandidates(snapshot: LibrarySnapshot, filters: RandomFilters) {
+function hardCandidates(snapshot: LibrarySnapshot, filters: RandomFilters, excludedItemIds: ReadonlySet<string>) {
   const disabledArtists = new Set(snapshot.artists.filter((artist) => artist.disabled).map((artist) => artist.id));
   const playableIds = new Set(
     snapshot.sources
@@ -40,6 +40,7 @@ function hardCandidates(snapshot: LibrarySnapshot, filters: RandomFilters) {
   );
   return allPlayable(snapshot).filter(
     (item) =>
+      !excludedItemIds.has(item.id) &&
       !item.disabled &&
       !item.artistIds.some((id) => disabledArtists.has(id)) &&
       playableIds.has(item.id) &&
@@ -90,16 +91,35 @@ function snapshotReferenceTime(snapshot: LibrarySnapshot) {
   );
 }
 
+export function starRatingWeight(rating?: number) {
+  if (rating === undefined) return 1;
+  return ({ 1: 0.18, 2: 0.5, 3: 1, 4: 1.7, 5: 2.7 } as Record<number, number>)[rating] ?? 1;
+}
+
+function preferenceWeight(item: PlayableItem, snapshot: LibrarySnapshot) {
+  if (item.rating !== undefined) return starRatingWeight(item.rating);
+
+  if (item.kind === "track" && item.albumId) {
+    const album = snapshot.albums.find((candidate) => candidate.id === item.albumId);
+    const albumRating = album?.rating ?? (album?.favorite ? 5 : undefined);
+    if (albumRating !== undefined) return starRatingWeight(albumRating);
+  }
+
+  // Backward compatibility for libraries created before star ratings.
+  let legacy = 1;
+  if (item.favorite) legacy *= 1.4;
+  if (item.frequencyPreference === "MORE") legacy *= 2;
+  if (item.frequencyPreference === "LESS") legacy *= 0.45;
+  return legacy;
+}
+
 function itemWeight(
   item: PlayableItem,
   snapshot: LibrarySnapshot,
   settings: RandomSettings,
   referenceTime: number,
 ) {
-  let weight = 1;
-  if (item.favorite) weight *= 1.4;
-  if (item.frequencyPreference === "MORE") weight *= 2;
-  if (item.frequencyPreference === "LESS") weight *= 0.45;
+  let weight = preferenceWeight(item, snapshot);
   if (item.kind === "mix") {
     weight *= { NEVER: 0, RARE: 0.18, NORMAL: 0.65, FREQUENT: 1.25 }[settings.mixFrequency];
     if (item.duration && item.duration > 5400) weight *= 0.55;
@@ -131,8 +151,9 @@ export function selectRandomItem(
   snapshot: LibrarySnapshot,
   filters: RandomFilters = {},
   seed = Date.now(),
+  excludedItemIds: ReadonlySet<string> = new Set<string>(),
 ): { item?: PlayableItem; diagnostic: RandomDiagnostic } {
-  const candidates = hardCandidates(snapshot, filters);
+  const candidates = hardCandidates(snapshot, filters, excludedItemIds);
   const referenceTime = snapshotReferenceTime(snapshot);
   if (!candidates.length) {
     return { diagnostic: { seed, candidateCount: 0, relaxation: "NONE", reason: "NO_HARD_CANDIDATE" } };
@@ -165,10 +186,14 @@ export function generateRandomQueue(
   const referenceTime = snapshotReferenceTime(snapshot);
   const entries: QueueEntry[] = [];
   const diagnostics: RandomDiagnostic[] = [];
+  const queuedIds = new Set<string>();
+
   for (let index = 0; index < size; index += 1) {
-    const result = selectRandomItem(working, filters, seed + index * 104729);
+    const result = selectRandomItem(working, filters, seed + index * 104729, queuedIds);
     diagnostics.push(result.diagnostic);
     if (!result.item) break;
+
+    queuedIds.add(result.item.id);
     entries.push({
       id: streamallId("queue"),
       itemId: result.item.id,
