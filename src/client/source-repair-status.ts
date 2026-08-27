@@ -12,11 +12,20 @@ export type SourceRepairStatus = {
 export const SOURCE_REPAIR_STATUS_KEY = "streamall:source-repair-status:v1";
 export const SOURCE_REPAIR_STATUS_EVENT = "streamall:source-repair-status";
 
-export function localDayKey(date = new Date()) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+/**
+ * YouTube Data API daily quotas reset at midnight Pacific Time. Using that
+ * calendar day here prevents reloads from bypassing Streamall's daily cap and
+ * lets a new repair window start as soon as YouTube's quota resets.
+ */
+export function repairDayKey(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Los_Angeles",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const value = (type: "year" | "month" | "day") => parts.find((part) => part.type === type)?.value ?? "00";
+  return `${value("year")}-${value("month")}-${value("day")}`;
 }
 
 export function readSourceRepairStatus(): SourceRepairStatus | undefined {
