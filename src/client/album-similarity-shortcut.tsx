@@ -45,9 +45,6 @@ function SimilarityDialog({ selection, onClose }: { selection: Selection; onClos
 
   useEffect(() => {
     const controller = new AbortController();
-    setData(undefined);
-    setError(undefined);
-    setLoading(true);
 
     void (async () => {
       try {
