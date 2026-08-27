@@ -1,0 +1,60 @@
+.catalog-release-copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.catalog-release-actions {
+  display: grid;
+  gap: 6px;
+  margin-top: 14px;
+  max-width: 460px;
+}
+
+.catalog-import-button {
+  justify-self: start;
+  border: 1px solid #79954b;
+  border-radius: 9px;
+  background: #baff45;
+  color: #10140d;
+  padding: 8px 12px;
+  font-size: 10px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.catalog-import-button:hover {
+  filter: brightness(1.06);
+}
+
+.catalog-import-button:disabled {
+  opacity: .55;
+  cursor: wait;
+}
+
+.catalog-release-actions small {
+  color: #77818b;
+  font-size: 8px;
+  line-height: 1.45;
+}
+
+.catalog-import-status {
+  display: inline-flex;
+  margin-top: 8px;
+  border: 1px solid #42552e;
+  border-radius: 999px;
+  background: rgba(139, 190, 68, .09);
+  color: #c8ff67;
+  padding: 5px 8px;
+  font-size: 8px;
+  font-weight: 800;
+}
+
+@media (max-width: 700px) {
+  .catalog-release-hero {
+    align-items: flex-start;
+  }
+
+  .catalog-import-button {
+    width: 100%;
+  }
+}

@@ -1,0 +1,30 @@
+# dependencies
+node_modules/
+
+# next
+.next/
+out/
+
+# tests
+coverage/
+playwright-report/
+test-results/
+
+# environment and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+service-account*.json
+
+# local data and editor files
+.data/
+.DS_Store
+*.log
+.vercel/
+tsconfig.tsbuildinfo
+
+# generated agent instruction files (not application source)
+AGENTS.md
+CLAUDE.md
