@@ -74,6 +74,16 @@ async function cached<T>(key: string, ttlMs: number, operation: () => Promise<T>
 
 type MbArtistCredit = { name?: string; joinphrase?: string; artist?: { id?: string; name?: string } };
 
+type MbReleaseGroupRow = {
+  id: string;
+  title: string;
+  "primary-type"?: string;
+  "secondary-types"?: string[];
+  "first-release-date"?: string;
+  "artist-credit"?: MbArtistCredit[];
+  genres?: Array<{ name?: string; count?: number }>;
+};
+
 function artistCreditName(credit?: MbArtistCredit[]) {
   if (!credit?.length) return undefined;
   return credit.map((entry) => `${entry.name ?? entry.artist?.name ?? ""}${entry.joinphrase ?? ""}`).join("").trim() || undefined;
@@ -128,27 +138,33 @@ export async function searchCatalogArtists(query: string): Promise<CatalogArtist
 
 export async function getArtistReleaseGroups(artistId: string): Promise<CatalogReleaseGroup[]> {
   return cached(`release-groups:${artistId}`, 24 * 60 * 60_000, async () => {
-    const url = new URL("release-group", API_ROOT);
-    url.search = new URLSearchParams({
-      artist: artistId,
-      type: "album|ep",
-      limit: "100",
-      inc: "artist-credits+genres",
-      fmt: "json",
-    }).toString();
-    const payload = await pacedFetchJson<{
-      "release-groups"?: Array<{
-        id: string;
-        title: string;
-        "primary-type"?: string;
-        "secondary-types"?: string[];
-        "first-release-date"?: string;
-        "artist-credit"?: MbArtistCredit[];
-        genres?: Array<{ name?: string; count?: number }>;
-      }>;
-    }>(url.toString());
+    const rows: MbReleaseGroupRow[] = [];
+    const pageSize = 100;
+    let offset = 0;
 
-    return (payload["release-groups"] ?? [])
+    while (true) {
+      const url = new URL("release-group", API_ROOT);
+      url.search = new URLSearchParams({
+        artist: artistId,
+        type: "album|ep",
+        limit: String(pageSize),
+        offset: String(offset),
+        inc: "artist-credits+genres",
+        fmt: "json",
+      }).toString();
+      const payload = await pacedFetchJson<{
+        "release-group-count"?: number;
+        "release-groups"?: MbReleaseGroupRow[];
+      }>(url.toString());
+
+      const page = payload["release-groups"] ?? [];
+      rows.push(...page);
+      const total = payload["release-group-count"] ?? rows.length;
+      if (!page.length || rows.length >= total || page.length < pageSize) break;
+      offset += page.length;
+    }
+
+    return rows
       .map((release) => ({
         id: release.id,
         title: release.title,
