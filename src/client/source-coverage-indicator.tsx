@@ -38,6 +38,7 @@ export function SourceCoverageIndicator() {
     let cancelled = false;
     let slot: HTMLDivElement | undefined;
     let observer: MutationObserver | undefined;
+    let lastLibrary: LibrarySnapshot | undefined;
 
     const ensureSlot = () => {
       if (slot?.isConnected) return slot;
@@ -52,7 +53,7 @@ export function SourceCoverageIndicator() {
       return slot;
     };
 
-    const render = (library?: LibrarySnapshot) => {
+    const render = (library = lastLibrary) => {
       const target = ensureSlot();
       if (!target) return;
       target.replaceChildren();
@@ -73,14 +74,14 @@ export function SourceCoverageIndicator() {
     };
 
     const refresh = async () => {
-      render();
+      if (!lastLibrary) render();
       const response = await fetch("/api/library", { cache: "no-store" }).catch(() => undefined);
       if (!response?.ok || cancelled) return;
-      const library = await response.json() as LibrarySnapshot;
-      if (!cancelled) render(library);
+      lastLibrary = await response.json() as LibrarySnapshot;
+      if (!cancelled) render();
     };
 
-    const onRepair = () => { void refresh(); };
+    const onRepair = () => { render(); void refresh(); };
     const onVisibility = () => { if (document.visibilityState === "visible") void refresh(); };
 
     if (!ensureSlot()) {
