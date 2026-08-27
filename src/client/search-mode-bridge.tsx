@@ -15,6 +15,42 @@ function setNativeValue(input: HTMLInputElement, value: string) {
   input.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
+function normalizeSearchText(value: string) {
+  return value
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("fr")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function findCatalogPreviewButton(title: string, artistName?: string) {
+  const targetTitle = normalizeSearchText(title);
+  const targetArtist = normalizeSearchText(artistName ?? "");
+  let best: { button: HTMLButtonElement; score: number } | undefined;
+
+  document.querySelectorAll<HTMLElement>(".search-results .result-card").forEach((card) => {
+    const button = card.querySelector<HTMLButtonElement>(".preview-button");
+    const resultTitle = normalizeSearchText(card.querySelector<HTMLElement>("h3")?.textContent ?? "");
+    const resultMeta = normalizeSearchText(card.querySelector<HTMLElement>("p")?.textContent ?? "");
+    if (!button || !resultTitle || !targetTitle) return;
+
+    let score = 0;
+    if (resultTitle === targetTitle) score += 100;
+    else if (resultTitle.includes(targetTitle) || targetTitle.includes(resultTitle)) score += 60;
+    else return;
+
+    if (targetArtist) {
+      if (resultMeta.startsWith(targetArtist)) score += 60;
+      else if (resultMeta.includes(targetArtist)) score += 40;
+    }
+
+    if (!best || score > best.score) best = { button, score };
+  });
+
+  return best?.button;
+}
+
 function readHistory(): SearchHistoryEntry[] {
   if (typeof window === "undefined") return [];
   try {
@@ -163,45 +199,66 @@ export function SearchModeBridge() {
     const input = host.querySelector<HTMLInputElement>('input[aria-label="Recherche multi-provider"]');
     if (!input) return;
 
+    let cancelPendingPreview: (() => void) | undefined;
+
     const onCatalogTrackPreview = (event: Event) => {
       const detail = (event as CustomEvent<{ artistName?: string; title?: string }>).detail;
       const artistName = detail?.artistName?.trim();
       const title = detail?.title?.trim();
       if (!title) return;
 
+      cancelPendingPreview?.();
+
       const previousValue = input.value;
       const value = [artistName, title].filter(Boolean).join(" ");
       setHistoryOpen(false);
       setNativeValue(input, value);
-      forceTrackSubmit.current = true;
-      suppressTrackHistory.current = true;
-      host.requestSubmit();
 
-      const restoreSearchField = () => {
-        setNativeValue(input, previousValue);
+      let cancelled = false;
+      let frameId: number | undefined;
+      let intervalId: number | undefined;
+      let timeoutId: number | undefined;
+
+      const restoreSearchField = () => setNativeValue(input, previousValue);
+      const cleanup = () => {
+        cancelled = true;
+        if (frameId !== undefined) window.cancelAnimationFrame(frameId);
+        if (intervalId !== undefined) window.clearInterval(intervalId);
+        if (timeoutId !== undefined) window.clearTimeout(timeoutId);
+      };
+      cancelPendingPreview = cleanup;
+
+      const tryPreview = () => {
+        if (cancelled) return;
+        const preview = findCatalogPreviewButton(title, artistName);
+        if (!preview) return;
+        cleanup();
+        preview.click();
+        window.requestAnimationFrame(restoreSearchField);
       };
 
-      const startedAt = Date.now();
-      const observer = new MutationObserver(() => {
-        const preview = document.querySelector<HTMLButtonElement>(".search-results .result-card .preview-button");
-        if (preview) {
-          observer.disconnect();
-          preview.click();
-          window.requestAnimationFrame(restoreSearchField);
-        } else if (Date.now() - startedAt > 12_000) {
-          observer.disconnect();
+      // Let React commit the controlled search input before submitting it. Without this frame,
+      // runSearch can still read the previous query even though the DOM already shows the new one.
+      frameId = window.requestAnimationFrame(() => {
+        if (cancelled) return;
+        forceTrackSubmit.current = true;
+        suppressTrackHistory.current = true;
+        host.requestSubmit();
+        tryPreview();
+        intervalId = window.setInterval(tryPreview, 100);
+        timeoutId = window.setTimeout(() => {
+          if (cancelled) return;
+          cleanup();
           restoreSearchField();
-        }
+        }, 12_500);
       });
-      observer.observe(document.body, { childList: true, subtree: true });
-      window.setTimeout(() => {
-        observer.disconnect();
-        restoreSearchField();
-      }, 12_500);
     };
 
     window.addEventListener("streamall:preview-catalog-track", onCatalogTrackPreview);
-    return () => window.removeEventListener("streamall:preview-catalog-track", onCatalogTrackPreview);
+    return () => {
+      cancelPendingPreview?.();
+      window.removeEventListener("streamall:preview-catalog-track", onCatalogTrackPreview);
+    };
   }, [host]);
 
   if (!host) return null;
