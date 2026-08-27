@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import type { LibrarySnapshot } from "@/domain/types";
-import { localDayKey, readSourceRepairStatus, SOURCE_REPAIR_STATUS_EVENT } from "./source-repair-status";
+import { readSourceRepairStatus, repairDayKey, SOURCE_REPAIR_STATUS_EVENT } from "./source-repair-status";
 
 const REFRESH_INTERVAL_MS = 30_000;
 
@@ -24,7 +24,7 @@ function timeLabel(value?: string) {
 
 function activityLabel() {
   const status = readSourceRepairStatus();
-  if (!status || status.day !== localDayKey()) return "Recherche du jour · en attente";
+  if (!status || status.day !== repairDayKey()) return "Recherche du jour · en attente";
   const time = timeLabel(status.lastRunAt);
   const suffix = time ? ` · ${time}` : "";
   if (status.state === "running") return `Recherche en cours · ${status.attemptedAlbums}/20 · +${status.addedSources}${suffix}`;
