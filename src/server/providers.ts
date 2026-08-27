@@ -6,7 +6,7 @@ export interface ProviderSearchStatus {
   message?: string;
 }
 
-interface SearchResponse {
+export interface SearchResponse {
   results: ExternalSearchResult[];
   status: ProviderSearchStatus;
 }
@@ -96,12 +96,13 @@ function isoDuration(value?: string) {
   return Number(match[1] ?? 0) * 86400 + Number(match[2] ?? 0) * 3600 + Number(match[3] ?? 0) * 60 + Number(match[4] ?? 0);
 }
 
-export function searchYouTube(query: string): Promise<SearchResponse> {
-  return cached("youtube", query, async () => {
+export function searchYouTube(query: string, maxResults = 10): Promise<SearchResponse> {
+  const boundedMaxResults = Math.max(1, Math.min(50, Math.floor(maxResults)));
+  return cached("youtube", `${query}\u0000max=${boundedMaxResults}`, async () => {
     const key = process.env.YOUTUBE_API_KEY;
     if (!key) return { results: [], status: { provider: "youtube", status: "BLOCKED_BY_CREDENTIAL", message: "YOUTUBE_API_KEY required" } };
     const searchUrl = new URL("https://www.googleapis.com/youtube/v3/search");
-    searchUrl.search = new URLSearchParams({ key, part: "snippet", q: query, type: "video", videoEmbeddable: "true", maxResults: "10" }).toString();
+    searchUrl.search = new URLSearchParams({ key, part: "snippet", q: query, type: "video", videoEmbeddable: "true", maxResults: String(boundedMaxResults) }).toString();
     const search = await fetchJson<{ items?: YouTubeSearchItem[] }>(searchUrl.toString());
     const ids = (search.items ?? []).flatMap((item) => (item.id?.videoId ? [item.id.videoId] : []));
     if (!ids.length) return { results: [], status: { provider: "youtube", status: "LIVE" } };

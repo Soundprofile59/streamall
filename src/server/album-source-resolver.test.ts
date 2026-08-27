@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { emptyLibrary, type ExternalSearchResult, type Track } from "@/domain/types";
-import { scoreSourceCandidate } from "./album-source-resolver";
+import { buildYouTubeFallbackBatches, scoreSourceCandidate } from "./album-source-resolver";
 
 function fixture() {
   const library = emptyLibrary("2026-08-25T00:00:00.000Z");
@@ -52,5 +52,17 @@ describe("album source matching", () => {
       providerMetadata: {},
     };
     expect(scoreSourceCandidate(track, candidate, library, "ISAM")).toBe(-Infinity);
+  });
+
+  it("groups unresolved tracks into at most two YouTube OR searches", () => {
+    const { library, track } = fixture();
+    const tracks = Array.from({ length: 27 }, (_, index) => ({ ...track, id: `track_${index}`, title: `Track ${index + 1}` }));
+    const batches = buildYouTubeFallbackBatches(tracks, library);
+
+    expect(batches).toHaveLength(2);
+    expect(batches[0]?.tracks).toHaveLength(10);
+    expect(batches[1]?.tracks).toHaveLength(10);
+    expect(batches[0]?.query).toContain("Amon Tobin Track 1|Amon Tobin Track 2");
+    expect(batches.flatMap((batch) => batch.tracks)).toHaveLength(20);
   });
 });
