@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import type { LibrarySnapshot } from "@/domain/types";
-import { localDayKey, readSourceRepairStatus, writeSourceRepairStatus } from "./source-repair-status";
+import { readSourceRepairStatus, repairDayKey, writeSourceRepairStatus } from "./source-repair-status";
 
 const START_DELAY_MS = 8_000;
 const BETWEEN_ALBUMS_MS = 7_000;
@@ -61,11 +61,16 @@ export function SourceRepairAgent() {
       const response = await fetch("/api/library").catch(() => undefined);
       if (!response?.ok || cancelled) return;
       const library = await response.json() as LibrarySnapshot;
-      const day = localDayKey();
+      const day = repairDayKey();
       const storageKey = `${STORAGE_PREFIX}${day}`;
       const attempted = readAttempted(storageKey);
       const previous = readSourceRepairStatus();
       let addedSources = previous?.day === day ? previous.addedSources : 0;
+
+      // A quota stop remains authoritative for the current YouTube quota day.
+      // Reloading Streamall must not restart requests until Pacific midnight.
+      if (previous?.day === day && previous.state === "quota") return;
+
       const remainingSlots = Math.max(0, MAX_ALBUMS_PER_DAY - attempted.size);
       const queue = incompleteAlbumIds(library)
         .filter((albumId) => !attempted.has(albumId))
@@ -99,7 +104,19 @@ export function SourceRepairAgent() {
           body: JSON.stringify({ albumId }),
         }).catch(() => undefined);
 
-        if (resolveResponse?.status === 429) {
+        if (!resolveResponse) {
+          writeSourceRepairStatus({
+            day,
+            state: "error",
+            attemptedAlbums: attempted.size,
+            addedSources,
+            lastRunAt: new Date().toISOString(),
+            message: "Recherche interrompue · réseau indisponible",
+          });
+          return;
+        }
+
+        if (resolveResponse.status === 429) {
           writeSourceRepairStatus({
             day,
             state: "error",
@@ -108,14 +125,13 @@ export function SourceRepairAgent() {
             lastRunAt: new Date().toISOString(),
             message: "Recherche temporairement ralentie",
           });
-          await sleep(10_000);
-          continue;
+          return;
         }
 
         attempted.add(albumId);
         writeAttempted(storageKey, attempted);
 
-        if (resolveResponse?.ok) {
+        if (resolveResponse.ok) {
           const result = await resolveResponse.json().catch(() => null) as ResolveResponse | null;
           addedSources += result?.addedSources ?? 0;
           window.dispatchEvent(new Event("streamall:library-refresh-request"));
