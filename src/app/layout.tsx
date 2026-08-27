@@ -5,6 +5,7 @@ import { CatalogBrowser } from "@/client/catalog-browser";
 import { MoodMatrixDialog } from "@/client/mood-matrix-dialog";
 import { PlaybackRowHighlight } from "@/client/playback-row-highlight";
 import { SearchModeBridge } from "@/client/search-mode-bridge";
+import { SourceRepairAgent } from "@/client/source-repair-agent";
 import "./globals.css";
 import "./ui-refresh.css";
 import "./interaction-refresh.css";
@@ -28,7 +29,7 @@ import "./v0810-typography.css";
 import "./v0811-typography.css";
 import "./build-badge.css";
 
-const APP_VERSION = "0.8.12";
+const APP_VERSION = "0.8.13";
 
 export const metadata: Metadata = {
   title: "Streamall",
@@ -55,6 +56,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         <PlaybackRowHighlight />
         <AlbumSimilarityShortcut />
         <AlbumDeleteShortcut />
+        <SourceRepairAgent />
         <div className="build-badge" title={`Streamall ${buildLabel}`} aria-label={`Version Streamall ${buildLabel}`}>
           {buildLabel}
         </div>
