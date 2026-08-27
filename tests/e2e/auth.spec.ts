@@ -23,6 +23,9 @@ test("library remains usable without authentication", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator(".app-shell")).toBeVisible();
   await expect(page.getByRole("button", { name: /RANDOM/ })).toBeVisible();
+
+  // Album-first navigation is the current default whenever the library contains albums.
+  await page.getByRole("button", { name: "Ouvrir Album 0" }).click();
   await page.getByRole("button", { name: /Track 0/ }).click();
   await expect(page.getByRole("heading", { name: "Track 0", level: 2 })).toBeVisible();
   await page.getByRole("button", { name: "Fermer" }).click();
