@@ -38,7 +38,6 @@ export function SourceCoverageIndicator() {
     let cancelled = false;
     let slot: HTMLDivElement | undefined;
     let observer: MutationObserver | undefined;
-    let interval: number | undefined;
 
     const ensureSlot = () => {
       if (slot?.isConnected) return slot;
@@ -99,12 +98,12 @@ export function SourceCoverageIndicator() {
     window.addEventListener("streamall:library-refresh-request", onRepair);
     window.addEventListener(SOURCE_REPAIR_STATUS_EVENT, onRepair);
     document.addEventListener("visibilitychange", onVisibility);
-    interval = window.setInterval(() => void refresh(), REFRESH_INTERVAL_MS);
+    const interval = window.setInterval(() => void refresh(), REFRESH_INTERVAL_MS);
 
     return () => {
       cancelled = true;
       observer?.disconnect();
-      if (interval !== undefined) window.clearInterval(interval);
+      window.clearInterval(interval);
       window.removeEventListener("streamall:library-refresh-request", onRepair);
       window.removeEventListener(SOURCE_REPAIR_STATUS_EVENT, onRepair);
       document.removeEventListener("visibilitychange", onVisibility);
