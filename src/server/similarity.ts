@@ -41,11 +41,12 @@ function releaseYear(value?: string) {
 function selectReleaseGroup(album: Album, releases: Awaited<ReturnType<typeof getArtistReleaseGroups>>) {
   const exact = releases.filter((release) => normalizeText(release.title) === normalizeText(album.title));
   if (!exact.length) return undefined;
-  if (!album.year || exact.length === 1) return exact[0];
+  const targetYear = album.year;
+  if (!targetYear || exact.length === 1) return exact[0];
   return [...exact].sort((a, b) => {
     const yearA = releaseYear(a.firstReleaseDate);
     const yearB = releaseYear(b.firstReleaseDate);
-    return Math.abs((yearA ?? album.year) - album.year) - Math.abs((yearB ?? album.year) - album.year);
+    return Math.abs((yearA ?? targetYear) - targetYear) - Math.abs((yearB ?? targetYear) - targetYear);
   })[0];
 }
 
