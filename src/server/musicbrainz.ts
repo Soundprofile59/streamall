@@ -1,7 +1,7 @@
 import type { CatalogArtist, CatalogReleaseDetail, CatalogReleaseGroup, CatalogTrack } from "@/domain/catalog";
 
 const API_ROOT = "https://musicbrainz.org/ws/2/";
-const USER_AGENT = "Streamall/0.7 (https://github.com/Soundprofile59/streamall)";
+const USER_AGENT = "Streamall/0.8.12 (https://github.com/Soundprofile59/streamall)";
 const MIN_INTERVAL_MS = 1_050;
 const MAX_ATTEMPTS = 3;
 const RETRYABLE_STATUSES = new Set([429, 502, 503, 504]);
@@ -72,9 +72,15 @@ async function cached<T>(key: string, ttlMs: number, operation: () => Promise<T>
   return value;
 }
 
-function artistCreditName(credit?: Array<{ name?: string; joinphrase?: string; artist?: { name?: string } }>) {
+type MbArtistCredit = { name?: string; joinphrase?: string; artist?: { id?: string; name?: string } };
+
+function artistCreditName(credit?: MbArtistCredit[]) {
   if (!credit?.length) return undefined;
   return credit.map((entry) => `${entry.name ?? entry.artist?.name ?? ""}${entry.joinphrase ?? ""}`).join("").trim() || undefined;
+}
+
+function artistCreditIds(credit?: MbArtistCredit[]) {
+  return [...new Set((credit ?? []).map((entry) => entry.artist?.id).filter((id): id is string => Boolean(id)))];
 }
 
 function coverArtForReleaseGroup(releaseGroupId: string) {
@@ -137,7 +143,7 @@ export async function getArtistReleaseGroups(artistId: string): Promise<CatalogR
         "primary-type"?: string;
         "secondary-types"?: string[];
         "first-release-date"?: string;
-        "artist-credit"?: Array<{ name?: string; joinphrase?: string; artist?: { name?: string } }>;
+        "artist-credit"?: MbArtistCredit[];
         genres?: Array<{ name?: string; count?: number }>;
       }>;
     }>(url.toString());
@@ -162,10 +168,11 @@ type MbTrack = {
   number?: string;
   title?: string;
   length?: number;
-  "artist-credit"?: Array<{ name?: string; joinphrase?: string; artist?: { name?: string } }>;
+  "artist-credit"?: MbArtistCredit[];
   recording?: {
+    id?: string;
     title?: string;
-    "artist-credit"?: Array<{ name?: string; joinphrase?: string; artist?: { name?: string } }>;
+    "artist-credit"?: MbArtistCredit[];
   };
 };
 
@@ -175,7 +182,7 @@ type MbRelease = {
   date?: string;
   country?: string;
   status?: string;
-  "artist-credit"?: Array<{ name?: string; joinphrase?: string; artist?: { name?: string } }>;
+  "artist-credit"?: MbArtistCredit[];
   media?: Array<{ position?: number; tracks?: MbTrack[] }>;
 };
 
@@ -185,12 +192,15 @@ function releaseTracks(release: MbRelease): CatalogTrack[] {
   return (release.media ?? []).flatMap((medium) =>
     (medium.tracks ?? []).map((track) => {
       globalPosition += 1;
+      const credit = track["artist-credit"]?.length ? track["artist-credit"] : track.recording?.["artist-credit"];
       return {
         position: globalPosition,
         number: track.number,
         title: track.title ?? track.recording?.title ?? `Piste ${globalPosition}`,
-        artistName: artistCreditName(track["artist-credit"]) ?? artistCreditName(track.recording?.["artist-credit"]) ?? releaseArtist,
+        artistName: artistCreditName(credit) ?? releaseArtist,
         lengthMs: track.length,
+        recordingId: track.recording?.id,
+        artistIds: artistCreditIds(credit),
       };
     }),
   );
