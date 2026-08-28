@@ -7,10 +7,20 @@ type YtmusicSearchResponse = {
   error?: string;
 };
 
+type YouTubeMusicBootstrap = {
+  visitorData?: string;
+  apiKey?: string;
+  clientVersion: string;
+};
+
 const YTMUSIC_ORIGIN = "https://music.youtube.com";
-const YTMUSIC_SEARCH_URL = `${YTMUSIC_ORIGIN}/youtubei/v1/search?alt=json`;
+const YTMUSIC_API = `${YTMUSIC_ORIGIN}/youtubei/v1`;
 const REQUEST_TIMEOUT_MS = 8_000;
 const DEFAULT_LIMIT = 20;
+const BOOTSTRAP_TTL_MS = 6 * 60 * 60_000;
+const USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/140 Safari/537.36";
+
+let bootstrapCache: { expiresAt: number; value: YouTubeMusicBootstrap } | undefined;
 
 function isRecord(value: unknown): value is UnknownRecord {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -131,7 +141,7 @@ function extractResponsiveItem(renderer: UnknownRecord): ExternalSearchResult | 
   const fallbackArtist = runs.find((run) => {
     if (run === artistRun || run === albumRun || run === durationRun) return false;
     const text = typeof run.text === "string" ? run.text.trim() : "";
-    return Boolean(text && text !== title && text !== " • ");
+    return Boolean(text && text !== title && text !== "•" && text !== "·");
   });
 
   const artistName = typeof artistRun?.text === "string"
@@ -194,32 +204,78 @@ function clientVersion(date = new Date()) {
   return `1.${year}${month}${day}.01.00`;
 }
 
-export async function searchYouTubeMusic(query: string, limit = DEFAULT_LIMIT): Promise<YtmusicSearchResponse> {
-  const boundedLimit = Math.max(1, Math.min(50, Math.floor(limit)));
+async function timedFetch(url: string, init: RequestInit) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
-    const response = await fetch(YTMUSIC_SEARCH_URL, {
+    return await fetch(url, { ...init, signal: controller.signal, cache: "no-store" });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function htmlConfigValue(html: string, key: string) {
+  const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = html.match(new RegExp(`"${escaped}"\\s*:\\s*"([^"\\\\]*(?:\\\\.[^"\\\\]*)*)"`));
+  if (!match?.[1]) return undefined;
+  try {
+    return JSON.parse(`"${match[1]}"`) as string;
+  } catch {
+    return match[1];
+  }
+}
+
+async function getBootstrap(): Promise<YouTubeMusicBootstrap> {
+  if (bootstrapCache && bootstrapCache.expiresAt > Date.now()) return bootstrapCache.value;
+  const fallback: YouTubeMusicBootstrap = { clientVersion: clientVersion() };
+  try {
+    const response = await timedFetch(`${YTMUSIC_ORIGIN}/`, {
+      headers: { accept: "text/html,*/*", "user-agent": USER_AGENT },
+    });
+    if (!response.ok) return fallback;
+    const html = await response.text();
+    const value: YouTubeMusicBootstrap = {
+      visitorData: htmlConfigValue(html, "VISITOR_DATA"),
+      apiKey: htmlConfigValue(html, "INNERTUBE_API_KEY"),
+      clientVersion: htmlConfigValue(html, "INNERTUBE_CLIENT_VERSION")
+        ?? htmlConfigValue(html, "INNERTUBE_CONTEXT_CLIENT_VERSION")
+        ?? fallback.clientVersion,
+    };
+    bootstrapCache = { expiresAt: Date.now() + BOOTSTRAP_TTL_MS, value };
+    return value;
+  } catch {
+    return fallback;
+  }
+}
+
+export async function searchYouTubeMusic(query: string, limit = DEFAULT_LIMIT): Promise<YtmusicSearchResponse> {
+  const boundedLimit = Math.max(1, Math.min(50, Math.floor(limit)));
+  try {
+    const bootstrap = await getBootstrap();
+    const url = new URL(`${YTMUSIC_API}/search`);
+    url.searchParams.set("alt", "json");
+    if (bootstrap.apiKey) url.searchParams.set("key", bootstrap.apiKey);
+    const response = await timedFetch(url.toString(), {
       method: "POST",
-      cache: "no-store",
-      signal: controller.signal,
       headers: {
         accept: "*/*",
         "content-type": "application/json",
         origin: YTMUSIC_ORIGIN,
         referer: `${YTMUSIC_ORIGIN}/`,
-        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/140 Safari/537.36",
+        "user-agent": USER_AGENT,
         "x-youtube-client-name": "67",
-        "x-youtube-client-version": clientVersion(),
+        "x-youtube-client-version": bootstrap.clientVersion,
+        ...(bootstrap.visitorData ? { "x-goog-visitor-id": bootstrap.visitorData } : {}),
       },
       body: JSON.stringify({
         query,
         context: {
           client: {
             clientName: "WEB_REMIX",
-            clientVersion: clientVersion(),
+            clientVersion: bootstrap.clientVersion,
             hl: process.env.YOUTUBE_MUSIC_HL ?? "fr",
             gl: process.env.YOUTUBE_MUSIC_GL ?? "FR",
+            ...(bootstrap.visitorData ? { visitorData: bootstrap.visitorData } : {}),
           },
           user: {},
         },
@@ -233,7 +289,5 @@ export async function searchYouTubeMusic(query: string, limit = DEFAULT_LIMIT): 
       results: [],
       error: error instanceof Error ? error.message : "YouTube Music indisponible",
     };
-  } finally {
-    clearTimeout(timeout);
   }
 }
