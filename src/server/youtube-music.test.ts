@@ -100,7 +100,14 @@ describe("YouTube Music discovery", () => {
     vi.stubEnv("YOUTUBE_API_KEY", "test-key");
     const fetchMock = vi.fn(async (input: string | URL | Request) => {
       const url = String(input);
+      if (url === "https://music.youtube.com/") {
+        return new Response(
+          '<html><script>ytcfg.set({"VISITOR_DATA":"visitor-test","INNERTUBE_API_KEY":"inner-test","INNERTUBE_CLIENT_VERSION":"1.20260828.01.00"});</script></html>',
+          { status: 200, headers: { "Content-Type": "text/html" } },
+        );
+      }
       if (url.startsWith("https://music.youtube.com/youtubei/v1/search")) {
+        expect(url).toContain("key=inner-test");
         return new Response(JSON.stringify(musicPayload()), { status: 200, headers: { "Content-Type": "application/json" } });
       }
       if (url.startsWith("https://www.googleapis.com/youtube/v3/videos")) {
