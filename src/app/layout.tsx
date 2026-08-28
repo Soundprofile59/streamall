@@ -31,7 +31,7 @@ import "./v0810-typography.css";
 import "./v0811-typography.css";
 import "./build-badge.css";
 
-const APP_VERSION = "0.8.14";
+const APP_VERSION = "0.8.15";
 
 export const metadata: Metadata = {
   title: "Streamall",
