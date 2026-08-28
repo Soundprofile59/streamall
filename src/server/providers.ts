@@ -106,10 +106,8 @@ async function getYouTubeVideoDetails(ids: string[], key: string) {
 }
 
 /**
- * Official YouTube Data API search. This remains the fallback because search.list
- * is expensive (100 quota units per call), while YouTube Music discovery below
- * uses the public signed-out catalogue and only spends a cheap videos.list call
- * to verify that discovered video IDs are still embeddable.
+ * Official YouTube Data API search. This remains the expensive fallback:
+ * search.list costs 100 quota units per call.
  */
 export function searchYouTube(query: string, maxResults = 10): Promise<SearchResponse> {
   const boundedMaxResults = Math.max(1, Math.min(50, Math.floor(maxResults)));
@@ -141,15 +139,26 @@ export function searchYouTube(query: string, maxResults = 10): Promise<SearchRes
   });
 }
 
-export function searchYouTubeCatalog(query: string, maxResults = 20): Promise<SearchResponse> {
+/**
+ * YouTube Music catalogue discovery without a search.list call. Returned
+ * videoIds are optionally checked with videos.list (1 quota unit for the whole
+ * batch) so the current YouTube iframe player can keep doing the playback.
+ * This function never falls back to search.list and is therefore safe for the
+ * automatic repair worker.
+ */
+export function searchYouTubeMusicCatalog(query: string, maxResults = 20): Promise<SearchResponse> {
   const boundedMaxResults = Math.max(1, Math.min(50, Math.floor(maxResults)));
-  return cached("youtube", `music:${query}\u0000max=${boundedMaxResults}`, async () => {
+  return cached("youtube", `music-only:${query}\u0000max=${boundedMaxResults}`, async () => {
     const music = await searchYouTubeMusic(query, boundedMaxResults);
     if (!music.results.length) {
-      const fallback = await searchYouTube(query, Math.min(10, boundedMaxResults));
-      return music.error && fallback.status.status === "LIVE"
-        ? { ...fallback, status: { ...fallback.status, message: `YouTube Music indisponible · ${fallback.status.message ?? "YouTube classique"}` } }
-        : fallback;
+      return {
+        results: [],
+        status: {
+          provider: "youtube",
+          status: music.error ? "ERROR" : "LIVE",
+          message: music.error ? `YouTube Music · ${music.error}` : "YouTube Music",
+        },
+      };
     }
 
     const key = process.env.YOUTUBE_API_KEY;
@@ -177,21 +186,27 @@ export function searchYouTubeCatalog(query: string, maxResults = 20): Promise<Se
           },
         }];
       });
-      if (verified.length) {
-        return {
-          results: verified,
-          status: { provider: "youtube", status: "LIVE", message: "YouTube Music" },
-        };
-      }
+      return {
+        results: verified,
+        status: { provider: "youtube", status: "LIVE", message: "YouTube Music" },
+      };
     } catch {
       return {
         results: music.results,
         status: { provider: "youtube", status: "LIVE", message: "YouTube Music · validation différée" },
       };
     }
-
-    return searchYouTube(query, Math.min(10, boundedMaxResults));
   });
+}
+
+/** Main user-facing YouTube search: Music catalogue first, classic YouTube only if needed. */
+export async function searchYouTubeCatalog(query: string, maxResults = 20): Promise<SearchResponse> {
+  const music = await searchYouTubeMusicCatalog(query, maxResults);
+  if (music.results.length) return music;
+  const fallback = await searchYouTube(query, Math.min(10, Math.max(1, maxResults)));
+  return music.status.status === "ERROR" && fallback.status.status === "LIVE"
+    ? { ...fallback, status: { ...fallback.status, message: `YouTube Music indisponible · ${fallback.status.message ?? "YouTube classique"}` } }
+    : fallback;
 }
 
 type JamendoTrack = {
