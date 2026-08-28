@@ -5,8 +5,15 @@ import { searchProviders, searchYouTube, type ProviderSearchStatus, type SearchR
 const VERSION_MARKERS = /\b(live|remix|remaster(?:ed)?|radio edit|extended|instrumental|cover|acoustic|demo|edit|version)\b/i;
 const MATCH_THRESHOLD = 10;
 const YOUTUBE_WIDE_RESULTS = 50;
+const YOUTUBE_TARGETED_RESULTS = 12;
 const YOUTUBE_BATCH_TRACKS = 10;
 const YOUTUBE_MAX_FALLBACK_BATCHES = 2;
+const DEFAULT_YOUTUBE_SEARCH_CALLS = 3;
+const MAX_YOUTUBE_SEARCH_CALLS_PER_ALBUM = 20;
+
+type ResolveAlbumSourceOptions = {
+  maxYouTubeSearchCalls?: number;
+};
 
 function tokenSet(value: string) {
   return new Set(normalizeText(value).split(" ").filter((token) => token.length > 1));
@@ -124,9 +131,9 @@ export function buildYouTubeFallbackBatches(tracks: Track[], snapshot: LibrarySn
   return batches;
 }
 
-async function safeWideYouTubeSearch(query: string): Promise<SearchResponse> {
+async function safeYouTubeSearch(query: string, maxResults = YOUTUBE_WIDE_RESULTS): Promise<SearchResponse> {
   try {
-    return await searchYouTube(query, YOUTUBE_WIDE_RESULTS);
+    return await searchYouTube(query, maxResults);
   } catch (error) {
     return {
       results: [],
@@ -139,7 +146,38 @@ async function safeWideYouTubeSearch(query: string): Promise<SearchResponse> {
   }
 }
 
-export async function resolveAlbumSources(snapshot: LibrarySnapshot, albumId: string) {
+function youtubeQuotaError(status: ProviderSearchStatus) {
+  return status.provider === "youtube" && status.status === "ERROR" && /403|quota/i.test(status.message ?? "");
+}
+
+function clampYouTubeBudget(value?: number) {
+  if (!Number.isFinite(value)) return DEFAULT_YOUTUBE_SEARCH_CALLS;
+  return Math.max(1, Math.min(MAX_YOUTUBE_SEARCH_CALLS_PER_ALBUM, Math.floor(value as number)));
+}
+
+function addBestMatch(
+  track: Track,
+  results: ExternalSearchResult[],
+  snapshot: LibrarySnapshot,
+  albumTitle: string,
+  reservedProviderIds: Set<string>,
+  usedProviderIds: Set<string>,
+  additions: Source[],
+  matchedTrackIds: Set<string>,
+  now: string,
+) {
+  const matches = bestCandidatesForTrack(track, results, snapshot, albumTitle, reservedProviderIds);
+  const best = matches[0];
+  if (!best) return false;
+  const providerKey = `${best.candidate.provider}:${best.candidate.externalId}`;
+  usedProviderIds.add(providerKey);
+  reservedProviderIds.add(providerKey);
+  additions.push(makeSource(snapshot, track.id, best.candidate, best.score, now));
+  matchedTrackIds.add(track.id);
+  return true;
+}
+
+export async function resolveAlbumSources(snapshot: LibrarySnapshot, albumId: string, options: ResolveAlbumSourceOptions = {}) {
   const album = snapshot.albums.find((candidate) => candidate.id === albumId);
   if (!album) throw new Error("Album not found");
 
@@ -148,13 +186,16 @@ export async function resolveAlbumSources(snapshot: LibrarySnapshot, albumId: st
     .map((id) => snapshot.artists.find((artist) => artist.id === id)?.name)
     .filter((name): name is string => Boolean(name));
   const query = `${albumArtists.join(" ")} ${album.title}`.trim();
+  const maxYouTubeSearchCalls = clampYouTubeBudget(options.maxYouTubeSearchCalls);
+  let youtubeSearchCalls = 0;
 
-  // YouTube search.list is capped at 100 calls/day. Spend one wide 50-result
-  // search on the whole album instead of ten small searches, and search the
-  // cheaper providers in parallel.
+  // Start with one wide album-level search. The repair agent can then spend
+  // more of its daily budget on targeted leftovers instead of stopping after
+  // the old three broad queries.
+  youtubeSearchCalls += 1;
   const [otherProviders, youtubeAlbum] = await Promise.all([
     searchProviders(query, ["audius", "jamendo"]),
-    safeWideYouTubeSearch(query),
+    safeYouTubeSearch(query),
   ]);
   const candidates = [...otherProviders.results, ...youtubeAlbum.results].filter((result) => result.kind === "track");
 
@@ -170,8 +211,6 @@ export async function resolveAlbumSources(snapshot: LibrarySnapshot, albumId: st
   );
   const now = new Date().toISOString();
 
-  // First pass: one wide album-level search. With 50 YouTube candidates this
-  // usually covers most or all of a release in a single Search Queries unit.
   for (const track of tracks) {
     if (alreadyPlayableIds.has(track.id)) continue;
     const matches = bestCandidatesForTrack(track, candidates, snapshot, album.title, reservedProviderIds);
@@ -184,34 +223,53 @@ export async function resolveAlbumSources(snapshot: LibrarySnapshot, albumId: st
     }
   }
 
-  // Second pass: unresolved tracks are grouped with YouTube's documented OR
-  // operator. At most two more search.list calls are spent per album, covering
-  // up to 20 leftovers instead of one expensive search call per track.
-  const unresolved = tracks.filter((track) => !alreadyPlayableIds.has(track.id) && !matchedTrackIds.has(track.id));
-  const fallbackBatches = buildYouTubeFallbackBatches(unresolved, snapshot);
-  const fallbackProviderStatuses: ProviderSearchStatus[] = [];
+  const youtubeStatuses: ProviderSearchStatus[] = [youtubeAlbum.status];
   let fallbackCandidateCount = 0;
+  let quotaReached = youtubeQuotaError(youtubeAlbum.status);
+
+  // Keep the two inexpensive OR passes first because a single result page can
+  // still resolve several titles at once.
+  const unresolvedAfterAlbum = tracks.filter((track) => !alreadyPlayableIds.has(track.id) && !matchedTrackIds.has(track.id));
+  const fallbackBatches = buildYouTubeFallbackBatches(unresolvedAfterAlbum, snapshot)
+    .slice(0, Math.max(0, maxYouTubeSearchCalls - youtubeSearchCalls));
 
   for (const batch of fallbackBatches) {
-    const result = await safeWideYouTubeSearch(batch.query);
+    if (quotaReached || youtubeSearchCalls >= maxYouTubeSearchCalls) break;
+    youtubeSearchCalls += 1;
+    const result = await safeYouTubeSearch(batch.query);
     fallbackCandidateCount += result.results.length;
-    fallbackProviderStatuses.push(result.status);
+    youtubeStatuses.push(result.status);
+    quotaReached = youtubeQuotaError(result.status);
     for (const track of batch.tracks) {
       if (matchedTrackIds.has(track.id)) continue;
-      const matches = bestCandidatesForTrack(track, result.results, snapshot, album.title, reservedProviderIds);
-      const best = matches[0];
-      if (!best) continue;
-      const providerKey = `${best.candidate.provider}:${best.candidate.externalId}`;
-      usedProviderIds.add(providerKey);
-      reservedProviderIds.add(providerKey);
-      additions.push(makeSource(snapshot, track.id, best.candidate, best.score, now));
-      matchedTrackIds.add(track.id);
+      addBestMatch(track, result.results, snapshot, album.title, reservedProviderIds, usedProviderIds, additions, matchedTrackIds, now);
     }
+  }
+
+  // Targeted repair is the high-recall fallback. Once the cheap album/grouped
+  // searches have done what they can, spend the remaining explicit budget on
+  // one artist+title query per unresolved track. This is what makes the daily
+  // 100-search allowance useful for actually filling holes in the library.
+  const targetedStatuses: ProviderSearchStatus[] = [];
+  let targetedCandidateCount = 0;
+  const unresolvedAfterBatches = tracks.filter((track) => !alreadyPlayableIds.has(track.id) && !matchedTrackIds.has(track.id));
+  for (const track of unresolvedAfterBatches) {
+    if (quotaReached || youtubeSearchCalls >= maxYouTubeSearchCalls) break;
+    const artists = artistNames(track, snapshot).join(" ").trim();
+    const targetedQuery = `${artists} ${track.title}`.trim();
+    if (!targetedQuery) continue;
+    youtubeSearchCalls += 1;
+    const result = await safeYouTubeSearch(targetedQuery, YOUTUBE_TARGETED_RESULTS);
+    targetedCandidateCount += result.results.length;
+    targetedStatuses.push(result.status);
+    quotaReached = youtubeQuotaError(result.status);
+    addBestMatch(track, result.results, snapshot, album.title, reservedProviderIds, usedProviderIds, additions, matchedTrackIds, now);
   }
 
   const coveredTracks = alreadyPlayableIds.size + matchedTrackIds.size;
   const unresolvedTracks = Math.max(0, tracks.length - coveredTracks);
-  const providers = [...otherProviders.providers, youtubeAlbum.status, ...fallbackProviderStatuses];
+  const providers = [...otherProviders.providers, ...youtubeStatuses, ...targetedStatuses];
+  const searchedCandidates = candidates.length + fallbackCandidateCount + targetedCandidateCount;
 
   if (!additions.length) {
     return {
@@ -221,7 +279,8 @@ export async function resolveAlbumSources(snapshot: LibrarySnapshot, albumId: st
       coveredTracks,
       unresolvedTracks,
       totalTracks: tracks.length,
-      searchedCandidates: candidates.length + fallbackCandidateCount,
+      searchedCandidates,
+      youtubeSearchCalls,
       providers,
     };
   }
@@ -238,7 +297,8 @@ export async function resolveAlbumSources(snapshot: LibrarySnapshot, albumId: st
     coveredTracks,
     unresolvedTracks,
     totalTracks: tracks.length,
-    searchedCandidates: candidates.length + fallbackCandidateCount,
+    searchedCandidates,
+    youtubeSearchCalls,
     providers,
   };
 }
