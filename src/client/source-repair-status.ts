@@ -1,15 +1,18 @@
-export type SourceRepairState = "idle" | "running" | "done" | "quota" | "error";
+export type SourceRepairState = "idle" | "running" | "done" | "budget" | "quota" | "error";
+
+export const SOURCE_REPAIR_AUTO_SEARCH_BUDGET = 90;
 
 export type SourceRepairStatus = {
   day: string;
   state: SourceRepairState;
   attemptedAlbums: number;
   addedSources: number;
+  youtubeSearches: number;
   lastRunAt?: string;
   message?: string;
 };
 
-export const SOURCE_REPAIR_STATUS_KEY = "streamall:source-repair-status:v1";
+export const SOURCE_REPAIR_STATUS_KEY = "streamall:source-repair-status:v2";
 export const SOURCE_REPAIR_STATUS_EVENT = "streamall:source-repair-status";
 
 /**
@@ -34,9 +37,10 @@ export function readSourceRepairStatus(): SourceRepairStatus | undefined {
     if (!parsed || typeof parsed.day !== "string" || typeof parsed.state !== "string") return undefined;
     return {
       day: parsed.day,
-      state: ["idle", "running", "done", "quota", "error"].includes(parsed.state) ? parsed.state as SourceRepairState : "idle",
+      state: ["idle", "running", "done", "budget", "quota", "error"].includes(parsed.state) ? parsed.state as SourceRepairState : "idle",
       attemptedAlbums: Number.isFinite(parsed.attemptedAlbums) ? Number(parsed.attemptedAlbums) : 0,
       addedSources: Number.isFinite(parsed.addedSources) ? Number(parsed.addedSources) : 0,
+      youtubeSearches: Number.isFinite(parsed.youtubeSearches) ? Number(parsed.youtubeSearches) : 0,
       lastRunAt: typeof parsed.lastRunAt === "string" ? parsed.lastRunAt : undefined,
       message: typeof parsed.message === "string" ? parsed.message : undefined,
     };
