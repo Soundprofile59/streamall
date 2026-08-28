@@ -5,7 +5,10 @@ import { resolveAlbumSources } from "@/server/album-source-resolver";
 import { rateLimit } from "@/server/rate-limit";
 import { getLibraryRepository } from "@/server/repositories";
 
-const requestSchema = z.object({ albumId: z.string().min(1).max(160) });
+const requestSchema = z.object({
+  albumId: z.string().min(1).max(160),
+  maxYouTubeSearchCalls: z.number().int().min(1).max(20).optional(),
+});
 
 export async function POST(request: Request) {
   const unauthorized = await requireApiSession();
@@ -24,12 +27,15 @@ export async function POST(request: Request) {
       return Response.json({ error: "ALBUM_NOT_FOUND" }, { status: 404 });
     }
 
-    const result = await resolveAlbumSources(current, parsed.data.albumId);
+    const result = await resolveAlbumSources(current, parsed.data.albumId, {
+      maxYouTubeSearchCalls: parsed.data.maxYouTubeSearchCalls,
+    });
     if (result.snapshot === current) {
       return Response.json({
         addedSources: 0,
         matchedTracks: 0,
         searchedCandidates: result.searchedCandidates,
+        youtubeSearchCalls: result.youtubeSearchCalls,
         providers: result.providers,
         revision: current.revision,
       });
@@ -40,6 +46,7 @@ export async function POST(request: Request) {
       addedSources: result.addedSources,
       matchedTracks: result.matchedTracks,
       searchedCandidates: result.searchedCandidates,
+      youtubeSearchCalls: result.youtubeSearchCalls,
       providers: result.providers,
       revision: persisted.revision,
     });
