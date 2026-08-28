@@ -8,6 +8,7 @@ const START_DELAY_MS = 8_000;
 const BETWEEN_ALBUMS_MS = 7_000;
 const MAX_ALBUMS_PER_DAY = 20;
 const STORAGE_PREFIX = "streamall:source-repair:v1:";
+const BAD_SOURCE_HEALTH = new Set(["TEMPORARILY_UNAVAILABLE", "UNAVAILABLE", "BLOCKED"]);
 
 function readAttempted(key: string) {
   try {
@@ -27,13 +28,15 @@ function writeAttempted(key: string, attempted: Set<string>) {
 }
 
 function incompleteAlbumIds(library: LibrarySnapshot) {
-  const enabledSourceItemIds = new Set(
-    library.sources.filter((source) => source.userEnabled).map((source) => source.playableItemId),
+  const playableSourceItemIds = new Set(
+    library.sources
+      .filter((source) => source.userEnabled && !BAD_SOURCE_HEALTH.has(source.healthStatus))
+      .map((source) => source.playableItemId),
   );
   return library.albums
     .map((album) => {
       const tracks = library.tracks.filter((track) => track.albumId === album.id);
-      const missing = tracks.filter((track) => !enabledSourceItemIds.has(track.id)).length;
+      const missing = tracks.filter((track) => !playableSourceItemIds.has(track.id)).length;
       return { id: album.id, missing };
     })
     .filter((entry) => entry.missing > 0)
@@ -68,7 +71,7 @@ export function SourceRepairAgent() {
       let addedSources = previous?.day === day ? previous.addedSources : 0;
 
       // A quota stop remains authoritative for the current YouTube quota day.
-      // Reloading Streamall must not restart requests until Pacific midnight.
+      // Reloading Streamall must not restart the expensive fallback until Pacific midnight.
       if (previous?.day === day && previous.state === "quota") return;
 
       const remainingSlots = Math.max(0, MAX_ALBUMS_PER_DAY - attempted.size);
