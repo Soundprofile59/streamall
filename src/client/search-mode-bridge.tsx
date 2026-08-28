@@ -15,6 +15,10 @@ function setNativeValue(input: HTMLInputElement, value: string) {
   input.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
+function closeCatalogBrowser() {
+  document.querySelector<HTMLButtonElement>('.catalog-header button[aria-label="Retour à la bibliothèque"]')?.click();
+}
+
 function readHistory(): SearchHistoryEntry[] {
   if (typeof window === "undefined") return [];
   try {
@@ -210,7 +214,7 @@ export function SearchModeBridge() {
     <>
       <div className="search-mode-toggle" role="group" aria-label="Type de recherche">
         <button type="button" className={mode === "catalog" ? "active" : ""} onClick={() => setMode("catalog")} title="Artistes, albums et EP du catalogue">Catalogue</button>
-        <button type="button" className={mode === "tracks" ? "active" : ""} onClick={() => setMode("tracks")} title="Chercher un titre ou un mix">Titres</button>
+        <button type="button" className={mode === "tracks" ? "active" : ""} onClick={() => { closeCatalogBrowser(); setMode("tracks"); }} title="Chercher un titre ou un mix">Titres</button>
       </div>
       {historyOpen && history.length ? <div className="search-history-menu" role="listbox" aria-label="Recherches précédentes">
         <div className="search-history-heading">
@@ -225,6 +229,7 @@ export function SearchModeBridge() {
           onClick={() => {
             const input = host.querySelector<HTMLInputElement>('input[aria-label="Recherche multi-provider"]');
             if (!input) return;
+            if (entry.mode === "tracks") closeCatalogBrowser();
             setMode(entry.mode);
             setNativeValue(input, entry.query);
             input.focus();

@@ -1,12 +1,21 @@
 import { normalizeText, streamallId } from "@/domain/library";
 import type { ExternalSearchResult, LibrarySnapshot, Source, Track } from "@/domain/types";
-import { searchProviders, searchYouTube, type ProviderSearchStatus, type SearchResponse } from "@/server/providers";
+import {
+  searchProviders,
+  searchYouTube,
+  searchYouTubeMusicCatalog,
+  type ProviderSearchStatus,
+  type SearchResponse,
+} from "@/server/providers";
 
 const VERSION_MARKERS = /\b(live|remix|remaster(?:ed)?|radio edit|extended|instrumental|cover|acoustic|demo|edit|version)\b/i;
 const MATCH_THRESHOLD = 10;
 const YOUTUBE_WIDE_RESULTS = 50;
 const YOUTUBE_BATCH_TRACKS = 10;
 const YOUTUBE_MAX_FALLBACK_BATCHES = 2;
+const YTMUSIC_TRACK_RESULTS = 8;
+const YTMUSIC_PARALLEL_SEARCHES = 6;
+const BAD_SOURCE_HEALTH = new Set(["TEMPORARILY_UNAVAILABLE", "UNAVAILABLE", "BLOCKED"]);
 
 function tokenSet(value: string) {
   return new Set(normalizeText(value).split(" ").filter((token) => token.length > 1));
@@ -25,6 +34,10 @@ function artistNames(track: Track, snapshot: LibrarySnapshot) {
   return track.artistIds
     .map((id) => snapshot.artists.find((artist) => artist.id === id)?.name)
     .filter((name): name is string => Boolean(name));
+}
+
+function sourceIsPlayable(source: Source) {
+  return source.userEnabled && !BAD_SOURCE_HEALTH.has(source.healthStatus);
 }
 
 export function scoreSourceCandidate(track: Track, candidate: ExternalSearchResult, snapshot: LibrarySnapshot, albumTitle?: string) {
@@ -111,6 +124,27 @@ function bestCandidatesForTrack(
   return [...byProvider.values()].sort((a, b) => b.score - a.score);
 }
 
+function addMatches(
+  track: Track,
+  candidates: ExternalSearchResult[],
+  snapshot: LibrarySnapshot,
+  albumTitle: string,
+  reservedProviderIds: Set<string>,
+  additions: Source[],
+  matchedTrackIds: Set<string>,
+  now: string,
+  onlyBest = false,
+) {
+  const matches = bestCandidatesForTrack(track, candidates, snapshot, albumTitle, reservedProviderIds);
+  const selected = onlyBest ? matches.slice(0, 1) : matches;
+  for (const { candidate, score } of selected) {
+    const providerKey = `${candidate.provider}:${candidate.externalId}`;
+    reservedProviderIds.add(providerKey);
+    additions.push(makeSource(snapshot, track.id, candidate, score, now));
+    matchedTrackIds.add(track.id);
+  }
+}
+
 export function buildYouTubeFallbackBatches(tracks: Track[], snapshot: LibrarySnapshot) {
   const batches: Array<{ tracks: Track[]; query: string }> = [];
   for (let index = 0; index < tracks.length && batches.length < YOUTUBE_MAX_FALLBACK_BATCHES; index += YOUTUBE_BATCH_TRACKS) {
@@ -139,6 +173,10 @@ async function safeWideYouTubeSearch(query: string): Promise<SearchResponse> {
   }
 }
 
+function unresolvedTracks(tracks: Track[], alreadyPlayableIds: Set<string>, matchedTrackIds: Set<string>) {
+  return tracks.filter((track) => !alreadyPlayableIds.has(track.id) && !matchedTrackIds.has(track.id));
+}
+
 export async function resolveAlbumSources(snapshot: LibrarySnapshot, albumId: string) {
   const album = snapshot.albums.find((candidate) => candidate.id === albumId);
   if (!album) throw new Error("Album not found");
@@ -149,69 +187,87 @@ export async function resolveAlbumSources(snapshot: LibrarySnapshot, albumId: st
     .filter((name): name is string => Boolean(name));
   const query = `${albumArtists.join(" ")} ${album.title}`.trim();
 
-  // YouTube search.list is capped at 100 calls/day. Spend one wide 50-result
-  // search on the whole album instead of ten small searches, and search the
-  // cheaper providers in parallel.
-  const [otherProviders, youtubeAlbum] = await Promise.all([
+  // Start with the public YouTube Music catalogue. This uses no expensive
+  // search.list call. Audius/Jamendo remain parallel secondary candidates.
+  const [otherProviders, youtubeMusicAlbum] = await Promise.all([
     searchProviders(query, ["audius", "jamendo"]),
-    safeWideYouTubeSearch(query),
+    searchYouTubeMusicCatalog(query, 20),
   ]);
-  const candidates = [...otherProviders.results, ...youtubeAlbum.results].filter((result) => result.kind === "track");
+  const candidates = [...otherProviders.results, ...youtubeMusicAlbum.results].filter((result) => result.kind === "track");
 
   const existingProviderIds = new Set(snapshot.sources.map((source) => `${source.provider}:${source.providerId}`));
-  const usedProviderIds = new Set<string>();
-  const reservedProviderIds = new Set([...existingProviderIds, ...usedProviderIds]);
+  const reservedProviderIds = new Set(existingProviderIds);
   const additions: Source[] = [];
   const matchedTrackIds = new Set<string>();
   const alreadyPlayableIds = new Set(
     tracks
-      .filter((track) => snapshot.sources.some((source) => source.playableItemId === track.id && source.userEnabled))
+      .filter((track) => snapshot.sources.some((source) => source.playableItemId === track.id && sourceIsPlayable(source)))
       .map((track) => track.id),
   );
   const now = new Date().toISOString();
 
-  // First pass: one wide album-level search. With 50 YouTube candidates this
-  // usually covers most or all of a release in a single Search Queries unit.
   for (const track of tracks) {
     if (alreadyPlayableIds.has(track.id)) continue;
-    const matches = bestCandidatesForTrack(track, candidates, snapshot, album.title, reservedProviderIds);
-    for (const { candidate, score } of matches) {
-      const providerKey = `${candidate.provider}:${candidate.externalId}`;
-      usedProviderIds.add(providerKey);
-      reservedProviderIds.add(providerKey);
-      additions.push(makeSource(snapshot, track.id, candidate, score, now));
-      matchedTrackIds.add(track.id);
+    addMatches(track, candidates, snapshot, album.title, reservedProviderIds, additions, matchedTrackIds, now);
+  }
+
+  // YouTube Music usually exposes the canonical Art Track for an exact
+  // artist/title query even when a broad album search only returned a handful
+  // of songs. Query unresolved tracks in small parallel batches. These calls do
+  // not consume YouTube Data search.list quota; videos.list validation is cheap.
+  const youtubeMusicTrackStatuses: ProviderSearchStatus[] = [];
+  let youtubeMusicTrackCandidateCount = 0;
+  const missingAfterAlbumSearch = unresolvedTracks(tracks, alreadyPlayableIds, matchedTrackIds);
+  for (let index = 0; index < missingAfterAlbumSearch.length; index += YTMUSIC_PARALLEL_SEARCHES) {
+    const batch = missingAfterAlbumSearch.slice(index, index + YTMUSIC_PARALLEL_SEARCHES);
+    const searched = await Promise.all(batch.map(async (track) => {
+      const trackQuery = `${artistNames(track, snapshot).join(" ")} ${track.title}`.trim();
+      return { track, response: await searchYouTubeMusicCatalog(trackQuery, YTMUSIC_TRACK_RESULTS) };
+    }));
+    for (const { track, response } of searched) {
+      youtubeMusicTrackStatuses.push(response.status);
+      youtubeMusicTrackCandidateCount += response.results.length;
+      if (matchedTrackIds.has(track.id)) continue;
+      addMatches(track, response.results, snapshot, album.title, reservedProviderIds, additions, matchedTrackIds, now, true);
     }
   }
 
-  // Second pass: unresolved tracks are grouped with YouTube's documented OR
-  // operator. At most two more search.list calls are spent per album, covering
-  // up to 20 leftovers instead of one expensive search call per track.
-  const unresolved = tracks.filter((track) => !alreadyPlayableIds.has(track.id) && !matchedTrackIds.has(track.id));
-  const fallbackBatches = buildYouTubeFallbackBatches(unresolved, snapshot);
-  const fallbackProviderStatuses: ProviderSearchStatus[] = [];
-  let fallbackCandidateCount = 0;
+  // Only real gaps now spend search.list quota. At worst this remains the old
+  // 1 album search + 2 OR batches, but successful YouTube Music lookup makes the
+  // expensive path unnecessary for most releases.
+  const classicStatuses: ProviderSearchStatus[] = [];
+  let classicCandidateCount = 0;
+  const missingBeforeClassic = unresolvedTracks(tracks, alreadyPlayableIds, matchedTrackIds);
+  if (missingBeforeClassic.length) {
+    const youtubeAlbum = await safeWideYouTubeSearch(query);
+    classicStatuses.push(youtubeAlbum.status);
+    classicCandidateCount += youtubeAlbum.results.length;
+    for (const track of missingBeforeClassic) {
+      addMatches(track, youtubeAlbum.results, snapshot, album.title, reservedProviderIds, additions, matchedTrackIds, now, true);
+    }
 
-  for (const batch of fallbackBatches) {
-    const result = await safeWideYouTubeSearch(batch.query);
-    fallbackCandidateCount += result.results.length;
-    fallbackProviderStatuses.push(result.status);
-    for (const track of batch.tracks) {
-      if (matchedTrackIds.has(track.id)) continue;
-      const matches = bestCandidatesForTrack(track, result.results, snapshot, album.title, reservedProviderIds);
-      const best = matches[0];
-      if (!best) continue;
-      const providerKey = `${best.candidate.provider}:${best.candidate.externalId}`;
-      usedProviderIds.add(providerKey);
-      reservedProviderIds.add(providerKey);
-      additions.push(makeSource(snapshot, track.id, best.candidate, best.score, now));
-      matchedTrackIds.add(track.id);
+    const remaining = unresolvedTracks(tracks, alreadyPlayableIds, matchedTrackIds);
+    const fallbackBatches = buildYouTubeFallbackBatches(remaining, snapshot);
+    for (const batch of fallbackBatches) {
+      const result = await safeWideYouTubeSearch(batch.query);
+      classicStatuses.push(result.status);
+      classicCandidateCount += result.results.length;
+      for (const track of batch.tracks) {
+        if (matchedTrackIds.has(track.id)) continue;
+        addMatches(track, result.results, snapshot, album.title, reservedProviderIds, additions, matchedTrackIds, now, true);
+      }
     }
   }
 
   const coveredTracks = alreadyPlayableIds.size + matchedTrackIds.size;
-  const unresolvedTracks = Math.max(0, tracks.length - coveredTracks);
-  const providers = [...otherProviders.providers, youtubeAlbum.status, ...fallbackProviderStatuses];
+  const remainingTracks = Math.max(0, tracks.length - coveredTracks);
+  const providers = [
+    ...otherProviders.providers,
+    youtubeMusicAlbum.status,
+    ...youtubeMusicTrackStatuses,
+    ...classicStatuses,
+  ];
+  const searchedCandidates = candidates.length + youtubeMusicTrackCandidateCount + classicCandidateCount;
 
   if (!additions.length) {
     return {
@@ -219,9 +275,9 @@ export async function resolveAlbumSources(snapshot: LibrarySnapshot, albumId: st
       addedSources: 0,
       matchedTracks: 0,
       coveredTracks,
-      unresolvedTracks,
+      unresolvedTracks: remainingTracks,
       totalTracks: tracks.length,
-      searchedCandidates: candidates.length + fallbackCandidateCount,
+      searchedCandidates,
       providers,
     };
   }
@@ -236,9 +292,9 @@ export async function resolveAlbumSources(snapshot: LibrarySnapshot, albumId: st
     addedSources: additions.length,
     matchedTracks: matchedTrackIds.size,
     coveredTracks,
-    unresolvedTracks,
+    unresolvedTracks: remainingTracks,
     totalTracks: tracks.length,
-    searchedCandidates: candidates.length + fallbackCandidateCount,
+    searchedCandidates,
     providers,
   };
 }
