@@ -2,12 +2,17 @@
 
 import { useEffect } from "react";
 import type { LibrarySnapshot } from "@/domain/types";
-import { readSourceRepairStatus, repairDayKey, writeSourceRepairStatus } from "./source-repair-status";
+import {
+  readSourceRepairStatus,
+  repairDayKey,
+  SOURCE_REPAIR_AUTO_SEARCH_BUDGET,
+  writeSourceRepairStatus,
+} from "./source-repair-status";
 
 const START_DELAY_MS = 8_000;
 const BETWEEN_ALBUMS_MS = 7_000;
-const MAX_ALBUMS_PER_DAY = 20;
-const STORAGE_PREFIX = "streamall:source-repair:v1:";
+const MAX_YOUTUBE_SEARCHES_PER_ALBUM = 20;
+const STORAGE_PREFIX = "streamall:source-repair:v2:";
 
 function readAttempted(key: string) {
   try {
@@ -47,6 +52,7 @@ function sleep(ms: number) {
 
 type ResolveResponse = {
   addedSources?: number;
+  youtubeSearchCalls?: number;
   providers?: Array<{ provider?: string; status?: string; message?: string }>;
 };
 
@@ -58,7 +64,7 @@ export function SourceRepairAgent() {
       await sleep(START_DELAY_MS);
       if (cancelled) return;
 
-      const response = await fetch("/api/library").catch(() => undefined);
+      const response = await fetch("/api/library", { cache: "no-store" }).catch(() => undefined);
       if (!response?.ok || cancelled) return;
       const library = await response.json() as LibrarySnapshot;
       const day = repairDayKey();
@@ -66,24 +72,36 @@ export function SourceRepairAgent() {
       const attempted = readAttempted(storageKey);
       const previous = readSourceRepairStatus();
       let addedSources = previous?.day === day ? previous.addedSources : 0;
+      let youtubeSearches = previous?.day === day ? previous.youtubeSearches : 0;
 
-      // A quota stop remains authoritative for the current YouTube quota day.
-      // Reloading Streamall must not restart requests until Pacific midnight.
-      if (previous?.day === day && previous.state === "quota") return;
+      // Quota and automatic-budget stops remain authoritative for the current
+      // YouTube quota day. Reloading Streamall resumes only when there is still
+      // budget available, or after Pacific midnight starts a fresh window.
+      if (previous?.day === day && ["quota", "budget"].includes(previous.state)) return;
 
-      const remainingSlots = Math.max(0, MAX_ALBUMS_PER_DAY - attempted.size);
-      const queue = incompleteAlbumIds(library)
-        .filter((albumId) => !attempted.has(albumId))
-        .slice(0, remainingSlots);
+      if (youtubeSearches >= SOURCE_REPAIR_AUTO_SEARCH_BUDGET) {
+        writeSourceRepairStatus({
+          day,
+          state: "budget",
+          attemptedAlbums: attempted.size,
+          addedSources,
+          youtubeSearches,
+          lastRunAt: new Date().toISOString(),
+          message: "Budget automatique atteint",
+        });
+        return;
+      }
 
+      const queue = incompleteAlbumIds(library).filter((albumId) => !attempted.has(albumId));
       if (!queue.length) {
         writeSourceRepairStatus({
           day,
           state: "done",
           attemptedAlbums: attempted.size,
           addedSources,
+          youtubeSearches,
           lastRunAt: new Date().toISOString(),
-          message: attempted.size >= MAX_ALBUMS_PER_DAY ? "Plafond quotidien atteint" : "Vérification terminée",
+          message: "Vérification terminée",
         });
         return;
       }
@@ -93,15 +111,31 @@ export function SourceRepairAgent() {
         state: "running",
         attemptedAlbums: attempted.size,
         addedSources,
+        youtubeSearches,
         lastRunAt: new Date().toISOString(),
       });
 
       for (const albumId of queue) {
         if (cancelled) return;
+        const remainingBudget = SOURCE_REPAIR_AUTO_SEARCH_BUDGET - youtubeSearches;
+        if (remainingBudget <= 0) {
+          writeSourceRepairStatus({
+            day,
+            state: "budget",
+            attemptedAlbums: attempted.size,
+            addedSources,
+            youtubeSearches,
+            lastRunAt: new Date().toISOString(),
+            message: "Budget automatique atteint",
+          });
+          return;
+        }
+
+        const albumBudget = Math.min(MAX_YOUTUBE_SEARCHES_PER_ALBUM, remainingBudget);
         const resolveResponse = await fetch("/api/albums/resolve-sources", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ albumId }),
+          body: JSON.stringify({ albumId, maxYouTubeSearchCalls: albumBudget }),
         }).catch(() => undefined);
 
         if (!resolveResponse) {
@@ -110,6 +144,7 @@ export function SourceRepairAgent() {
             state: "error",
             attemptedAlbums: attempted.size,
             addedSources,
+            youtubeSearches,
             lastRunAt: new Date().toISOString(),
             message: "Recherche interrompue · réseau indisponible",
           });
@@ -122,33 +157,63 @@ export function SourceRepairAgent() {
             state: "error",
             attemptedAlbums: attempted.size,
             addedSources,
+            youtubeSearches,
             lastRunAt: new Date().toISOString(),
             message: "Recherche temporairement ralentie",
           });
           return;
         }
 
+        if (!resolveResponse.ok) {
+          writeSourceRepairStatus({
+            day,
+            state: "error",
+            attemptedAlbums: attempted.size,
+            addedSources,
+            youtubeSearches,
+            lastRunAt: new Date().toISOString(),
+            message: `Recherche interrompue · erreur ${resolveResponse.status}`,
+          });
+          return;
+        }
+
+        const result = await resolveResponse.json().catch(() => null) as ResolveResponse | null;
+        youtubeSearches = Math.min(
+          SOURCE_REPAIR_AUTO_SEARCH_BUDGET,
+          youtubeSearches + Math.max(0, result?.youtubeSearchCalls ?? 0),
+        );
+        addedSources += result?.addedSources ?? 0;
         attempted.add(albumId);
         writeAttempted(storageKey, attempted);
+        window.dispatchEvent(new Event("streamall:library-refresh-request"));
 
-        if (resolveResponse.ok) {
-          const result = await resolveResponse.json().catch(() => null) as ResolveResponse | null;
-          addedSources += result?.addedSources ?? 0;
-          window.dispatchEvent(new Event("streamall:library-refresh-request"));
-          const youtubeQuotaError = result?.providers?.some((provider) =>
-            provider.provider === "youtube" && provider.status === "ERROR" && /403|quota/i.test(provider.message ?? ""),
-          );
-          if (youtubeQuotaError) {
-            writeSourceRepairStatus({
-              day,
-              state: "quota",
-              attemptedAlbums: attempted.size,
-              addedSources,
-              lastRunAt: new Date().toISOString(),
-              message: "Quota YouTube atteint",
-            });
-            return;
-          }
+        const youtubeQuotaError = result?.providers?.some((provider) =>
+          provider.provider === "youtube" && provider.status === "ERROR" && /403|quota/i.test(provider.message ?? ""),
+        );
+        if (youtubeQuotaError) {
+          writeSourceRepairStatus({
+            day,
+            state: "quota",
+            attemptedAlbums: attempted.size,
+            addedSources,
+            youtubeSearches,
+            lastRunAt: new Date().toISOString(),
+            message: "Quota YouTube atteint",
+          });
+          return;
+        }
+
+        if (youtubeSearches >= SOURCE_REPAIR_AUTO_SEARCH_BUDGET) {
+          writeSourceRepairStatus({
+            day,
+            state: "budget",
+            attemptedAlbums: attempted.size,
+            addedSources,
+            youtubeSearches,
+            lastRunAt: new Date().toISOString(),
+            message: "Budget automatique atteint",
+          });
+          return;
         }
 
         writeSourceRepairStatus({
@@ -156,6 +221,7 @@ export function SourceRepairAgent() {
           state: "running",
           attemptedAlbums: attempted.size,
           addedSources,
+          youtubeSearches,
           lastRunAt: new Date().toISOString(),
         });
         await sleep(BETWEEN_ALBUMS_MS);
@@ -166,6 +232,7 @@ export function SourceRepairAgent() {
         state: "done",
         attemptedAlbums: attempted.size,
         addedSources,
+        youtubeSearches,
         lastRunAt: new Date().toISOString(),
         message: "Vérification terminée",
       });
