@@ -1,4 +1,5 @@
 import type { ExternalSearchResult, Provider } from "@/domain/types";
+import { searchYouTubeMusic } from "@/server/youtube-music";
 
 export interface ProviderSearchStatus {
   provider: Provider;
@@ -96,22 +97,34 @@ function isoDuration(value?: string) {
   return Number(match[1] ?? 0) * 86400 + Number(match[2] ?? 0) * 3600 + Number(match[3] ?? 0) * 60 + Number(match[4] ?? 0);
 }
 
+async function getYouTubeVideoDetails(ids: string[], key: string) {
+  if (!ids.length) return [];
+  const detailsUrl = new URL("https://www.googleapis.com/youtube/v3/videos");
+  detailsUrl.search = new URLSearchParams({ key, part: "snippet,contentDetails,status", id: ids.slice(0, 50).join(",") }).toString();
+  const details = await fetchJson<{ items?: YouTubeVideo[] }>(detailsUrl.toString());
+  return details.items ?? [];
+}
+
+/**
+ * Official YouTube Data API search. This remains the fallback because search.list
+ * is expensive (100 quota units per call), while YouTube Music discovery below
+ * uses the public signed-out catalogue and only spends a cheap videos.list call
+ * to verify that discovered video IDs are still embeddable.
+ */
 export function searchYouTube(query: string, maxResults = 10): Promise<SearchResponse> {
   const boundedMaxResults = Math.max(1, Math.min(50, Math.floor(maxResults)));
-  return cached("youtube", `${query}\u0000max=${boundedMaxResults}`, async () => {
+  return cached("youtube", `classic:${query}\u0000max=${boundedMaxResults}`, async () => {
     const key = process.env.YOUTUBE_API_KEY;
     if (!key) return { results: [], status: { provider: "youtube", status: "BLOCKED_BY_CREDENTIAL", message: "YOUTUBE_API_KEY required" } };
     const searchUrl = new URL("https://www.googleapis.com/youtube/v3/search");
     searchUrl.search = new URLSearchParams({ key, part: "snippet", q: query, type: "video", videoEmbeddable: "true", maxResults: String(boundedMaxResults) }).toString();
     const search = await fetchJson<{ items?: YouTubeSearchItem[] }>(searchUrl.toString());
     const ids = (search.items ?? []).flatMap((item) => (item.id?.videoId ? [item.id.videoId] : []));
-    if (!ids.length) return { results: [], status: { provider: "youtube", status: "LIVE" } };
-    const detailsUrl = new URL("https://www.googleapis.com/youtube/v3/videos");
-    detailsUrl.search = new URLSearchParams({ key, part: "snippet,contentDetails,status", id: ids.join(",") }).toString();
-    const details = await fetchJson<{ items?: YouTubeVideo[] }>(detailsUrl.toString());
+    if (!ids.length) return { results: [], status: { provider: "youtube", status: "LIVE", message: "YouTube classique" } };
+    const details = await getYouTubeVideoDetails(ids, key);
     return {
-      status: { provider: "youtube", status: "LIVE" },
-      results: (details.items ?? [])
+      status: { provider: "youtube", status: "LIVE", message: "YouTube classique" },
+      results: details
         .filter((video) => video.id && video.status?.embeddable !== false)
         .map((video) => ({
           externalId: video.id!,
@@ -122,9 +135,62 @@ export function searchYouTube(query: string, maxResults = 10): Promise<SearchRes
           duration: isoDuration(video.contentDetails?.duration),
           artwork: video.snippet?.thumbnails?.high?.url,
           url: video.id!,
-          providerMetadata: { madeForKids: video.status?.madeForKids ?? false },
+          providerMetadata: { madeForKids: video.status?.madeForKids ?? false, discoveredVia: "youtube-data" },
         })),
     };
+  });
+}
+
+export function searchYouTubeCatalog(query: string, maxResults = 20): Promise<SearchResponse> {
+  const boundedMaxResults = Math.max(1, Math.min(50, Math.floor(maxResults)));
+  return cached("youtube", `music:${query}\u0000max=${boundedMaxResults}`, async () => {
+    const music = await searchYouTubeMusic(query, boundedMaxResults);
+    if (!music.results.length) {
+      const fallback = await searchYouTube(query, Math.min(10, boundedMaxResults));
+      return music.error && fallback.status.status === "LIVE"
+        ? { ...fallback, status: { ...fallback.status, message: `YouTube Music indisponible · ${fallback.status.message ?? "YouTube classique"}` } }
+        : fallback;
+    }
+
+    const key = process.env.YOUTUBE_API_KEY;
+    if (!key) {
+      return {
+        results: music.results,
+        status: { provider: "youtube", status: "LIVE", message: "YouTube Music · IDs non vérifiés" },
+      };
+    }
+
+    try {
+      const details = await getYouTubeVideoDetails(music.results.map((result) => result.externalId), key);
+      const detailById = new Map(details.filter((video): video is YouTubeVideo & { id: string } => Boolean(video.id)).map((video) => [video.id, video]));
+      const verified = music.results.flatMap((result) => {
+        const video = detailById.get(result.externalId);
+        if (!video || video.status?.embeddable === false) return [];
+        return [{
+          ...result,
+          duration: isoDuration(video.contentDetails?.duration) ?? result.duration,
+          artwork: video.snippet?.thumbnails?.high?.url ?? result.artwork,
+          providerMetadata: {
+            ...result.providerMetadata,
+            madeForKids: video.status?.madeForKids ?? false,
+            embeddableVerified: true,
+          },
+        }];
+      });
+      if (verified.length) {
+        return {
+          results: verified,
+          status: { provider: "youtube", status: "LIVE", message: "YouTube Music" },
+        };
+      }
+    } catch {
+      return {
+        results: music.results,
+        status: { provider: "youtube", status: "LIVE", message: "YouTube Music · validation différée" },
+      };
+    }
+
+    return searchYouTube(query, Math.min(10, boundedMaxResults));
   });
 }
 
@@ -206,7 +272,7 @@ export function searchMixcloud(query: string): Promise<SearchResponse> {
 export async function searchProviders(query: string, providers: Provider[]) {
   const operations: Partial<Record<Provider, () => Promise<SearchResponse>>> = {
     audius: () => searchAudius(query),
-    youtube: () => searchYouTube(query),
+    youtube: () => searchYouTubeCatalog(query),
     jamendo: () => searchJamendo(query),
     mixcloud: () => searchMixcloud(query),
   };
